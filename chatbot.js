@@ -26,7 +26,7 @@ const Chatbot = (() => {
   // Mise en forme minimale et sûre : on échappe le HTML puis on gère
   // **gras**, *italique*, listes « - » et retours à la ligne.
   function formatText(text) {
-    const esc = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const esc = String(text ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     return esc
       .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
       .replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>")
@@ -41,11 +41,18 @@ const Chatbot = (() => {
     div.className = `msg ${from}`;
     if (from === "bot") {
       div.innerHTML = formatText(text);
-      if (sources.length) {
+      const safeSources = (Array.isArray(sources) ? sources : []).map(source => {
+        try {
+          const url = new URL(String(source.url || ""));
+          if (!["http:", "https:"].includes(url.protocol)) return null;
+          return { url: url.href, title: String(source.title || url.hostname) };
+        } catch { return null; }
+      }).filter(Boolean);
+      if (safeSources.length) {
         const src = document.createElement("div");
         src.className = "sources";
         src.textContent = "Sources : ";
-        sources.forEach((s, i) => {
+        safeSources.forEach((s, i) => {
           const a = document.createElement("a");
           a.href = s.url;
           a.target = "_blank";
@@ -64,14 +71,12 @@ const Chatbot = (() => {
     return div;
   }
 
-  // Toute l'analyse du site (classement, pronostics, compos…) envoyée à l'IA
-  const siteContext = () => LocalBot.fullContext();
-
   async function askAI() {
-    const res = await fetch("/api/chat", {
+    const res = await footApiFetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: history, context: siteContext() }),
+      // Le serveur reconstruit lui-même le contexte depuis une source fiable.
+      body: JSON.stringify({ messages: history, league: CURRENT_LEAGUE.apiCode }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {

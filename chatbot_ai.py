@@ -11,6 +11,7 @@ Clé nécessaire dans .env :  ANTHROPIC_API_KEY=...
 """
 
 from datetime import date
+from urllib.parse import urlparse
 
 import anthropic
 
@@ -96,9 +97,11 @@ def answer(messages, site_context=""):
         text_parts.append(block.text)
         for c in getattr(block, "citations", None) or []:
             url = getattr(c, "url", None)
-            if url and url not in seen:
+            parsed = urlparse(str(url or ""))
+            if parsed.scheme == "https" and parsed.netloc and url not in seen:
                 seen.add(url)
-                sources.append({"title": getattr(c, "title", None) or url, "url": url})
+                title = str(getattr(c, "title", None) or url)[:200]
+                sources.append({"title": title, "url": str(url)[:500]})
 
     reply = "".join(text_parts).strip() or "Je n'ai pas réussi à formuler une réponse, peux-tu reformuler ?"
     return {"reply": reply, "sources": sources[:5]}

@@ -11,6 +11,7 @@ Les résultats sont gardés en cache 6 heures par match pour limiter les coûts.
 
 import time
 from datetime import date
+from urllib.parse import urlparse
 
 import anthropic
 
@@ -22,8 +23,8 @@ _cache = {}
 PLAYER = {
     "type": "object",
     "properties": {
-        "nom": {"type": "string"},
-        "poste": {"type": "string", "description": "Abréviation : G, DD, DC, DG, MDC, MC, MOC, AD, AG, BU…"},
+        "nom": {"type": "string", "maxLength": 100},
+        "poste": {"type": "string", "maxLength": 12, "description": "Abréviation : G, DD, DC, DG, MDC, MC, MOC, AD, AG, BU…"},
     },
     "required": ["nom", "poste"],
     "additionalProperties": False,
@@ -37,10 +38,12 @@ TEAM = {
             "type": "array",
             "description": "Les 11 titulaires, ligne par ligne, du gardien vers l'attaque. "
                            "Chaque ligne est listée de la gauche vers la droite du terrain.",
-            "items": {"type": "array", "items": PLAYER},
+            "items": {"type": "array", "maxItems": 5, "items": PLAYER},
+            "maxItems": 5,
         },
         "absents": {
             "type": "array",
+            "maxItems": 20,
             "items": {
                 "type": "object",
                 "properties": {
@@ -120,11 +123,22 @@ def _valid(data):
     try:
         for side in ("domicile", "exterieur"):
             n = sum(len(line) for line in data[side]["lignes"])
-            if n < 10 or n > 11:
+            if n != 11:
                 return False
         return True
     except (KeyError, TypeError):
         return False
+
+
+def _safe_source(url, seen_urls):
+    normalized = str(url)
+    parsed = urlparse(normalized)
+    return (
+        parsed.scheme == "https"
+        and bool(parsed.netloc)
+        and normalized in seen_urls
+        and len(normalized) <= 500
+    )
 
 
 def get_lineups(match_id, home, away, match_date, league="Ligue 1"):
@@ -164,9 +178,12 @@ def get_lineups(match_id, home, away, match_date, league="Ligue 1"):
             data = call.input
             if not _valid(data):
                 raise RuntimeError("Compositions incomplètes, réessaie plus tard.")
-            # On ne garde que les sources réellement trouvées par la recherche
-            if seen_urls:
-                data["sources"] = [s for s in data["sources"] if s["url"] in seen_urls]
+            # On ne garde que les pages HTTPS réellement renvoyées par la recherche.
+            # Sans résultat vérifié, aucune URL générée par le modèle n'est affichée.
+            data["sources"] = [
+                s for s in data["sources"]
+                if _safe_source(s.get("url", ""), seen_urls)
+            ]
             data["generee_le"] = time.strftime("%d/%m/%Y %H:%M")
             _cache[match_id] = {"time": time.time(), "data": data}
             return data

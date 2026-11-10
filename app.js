@@ -3,13 +3,22 @@
    ========================================================= */
 
 const $ = sel => document.querySelector(sel);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const safeUrl = value => {
+  try {
+    const url = new URL(String(value));
+    return ["http:", "https:"].includes(url.protocol) ? url.href : "";
+  } catch { return ""; }
+};
+const safeColor = value => /^#[0-9a-f]{3,8}$/i.test(String(value || "")) ? value : "#8b98a5";
 const team = id => Analysis.teamById(id);
 // Logo du club si l'API le fournit, sinon pastille de couleur
 const dot = id => {
   const t = team(id);
-  return t.crest
-    ? `<img class="team-crest" src="${t.crest}" alt="" loading="lazy">`
-    : `<span class="team-dot" style="background:${t.color || "#8b98a5"}"></span>`;
+  const crest = safeUrl(t?.crest);
+  return crest
+    ? `<img class="team-crest" src="${esc(crest)}" alt="" loading="lazy">`
+    : `<span class="team-dot" style="background:${safeColor(t?.color)}"></span>`;
 };
 const pct = x => Math.round(x * 100) + " %";
 const ord = n => (n === 1 ? "1er" : n + "e");
@@ -25,6 +34,7 @@ function showView(name) {
   $(`#view-${name}`).classList.add("active");
   document.querySelectorAll(".nav-btn").forEach(b => b.classList.toggle("active", b.dataset.view === name));
   window.scrollTo({ top: 0, behavior: "smooth" });
+  document.dispatchEvent(new CustomEvent("foot:view", { detail: { name } }));
 }
 document.querySelectorAll("[data-view]").forEach(btn =>
   btn.addEventListener("click", () => showView(btn.dataset.view))
@@ -33,18 +43,19 @@ document.querySelectorAll("[data-view]").forEach(btn =>
 // ---------- Composants ----------
 function matchRow(m) {
   const p = Analysis.predict(m.home, m.away);
+  const home = team(m.home), away = team(m.away);
   return `
-    <div class="match" data-id="${m.id}">
-      <div class="day">J${m.day}<br>${fmtDate(m.date)}</div>
-      <div class="home">${team(m.home).name} <small class="pos">${ord(Analysis.position(m.home))}</small>${dot(m.home)}</div>
-      <div class="score time">${m.time.replace(":", "h")}</div>
-      <div class="away">${dot(m.away)}<small class="pos">${ord(Analysis.position(m.away))}</small> ${team(m.away).name}</div>
-      <div class="mini-probs" title="Victoire domicile / Nul / Victoire extérieur">
-        <div class="p-home" style="width:${p.home * 100}%"></div>
-        <div class="p-draw" style="width:${p.draw * 100}%"></div>
-        <div class="p-away" style="width:${p.away * 100}%"></div>
-      </div>
-    </div>`;
+    <button type="button" class="match" data-id="${esc(m.id)}" aria-label="Voir ${esc(home.name)} contre ${esc(away.name)}">
+      <span class="day">J${esc(m.day)}<br>${esc(fmtDate(m.date))}</span>
+      <span class="home">${esc(home.name)} <small class="pos">${ord(Analysis.position(m.home))}</small>${dot(m.home)}</span>
+      <span class="score time">${esc(String(m.time).replace(":", "h"))}</span>
+      <span class="away">${dot(m.away)}<small class="pos">${ord(Analysis.position(m.away))}</small> ${esc(away.name)}</span>
+      <span class="mini-probs" title="Victoire domicile / Nul / Victoire extérieur">
+        <span class="p-home" style="width:${p.home * 100}%"></span>
+        <span class="p-draw" style="width:${p.draw * 100}%"></span>
+        <span class="p-away" style="width:${p.away * 100}%"></span>
+      </span>
+    </button>`;
 }
 
 function bindMatchClicks(container) {
@@ -56,7 +67,7 @@ function bindMatchClicks(container) {
 function bars(items, max, cls = "") {
   return items.map(i => `
     <div class="bar-row">
-      <span>${dot(i.id)}${i.name}</span>
+      <span>${dot(i.id)}${esc(i.name)}</span>
       <div class="bar-track"><div class="bar-fill ${cls}" style="width:${(i.value / max) * 100}%"></div></div>
       <span class="num">${i.value}</span>
     </div>`).join("");
@@ -73,7 +84,7 @@ function predictionBlocks(h, a) {
         <div class="p-away" style="width:${p.away * 100}%">${pct(p.away)}</div>
       </div>
       <div style="display:flex;justify-content:space-between;color:var(--muted);font-size:.85rem">
-        <span>Victoire ${team(h).name}</span><span>Nul</span><span>Victoire ${team(a).name}</span>
+        <span>Victoire ${esc(team(h).name)}</span><span>Nul</span><span>Victoire ${esc(team(a).name)}</span>
       </div>
     </div>
     <div class="grid-2">
@@ -107,7 +118,7 @@ function renderDashboard() {
     ["Matchs nuls", k.drawPct + " %"],
     ["Leader", `${k.leader.name.replace("Paris Saint-Germain", "PSG")} (${k.leader.pts} pts)`],
     ["Meilleur buteur", topScorerLabel()],
-  ].map(([l, v]) => `<div class="kpi"><div class="label">${l}</div><div class="value">${v}</div></div>`).join("");
+  ].map(([l, v]) => `<div class="kpi"><div class="label">${esc(l)}</div><div class="value">${esc(v)}</div></div>`).join("");
 
   const table = Analysis.standings();
   const attack = [...table].sort((a, b) => b.GF - a.GF).slice(0, 5).map(t => ({ id: t.id, name: t.name, value: t.GF }));
@@ -137,7 +148,7 @@ function topScorerLabel() {
 $("#filter-team").addEventListener("change", renderMatches);
 function initFilters() {
   const opts = [...TEAMS].sort((a, b) => a.name.localeCompare(b.name))
-    .map(t => `<option value="${t.id}">${t.name}</option>`).join("");
+    .map(t => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join("");
   $("#filter-team").innerHTML = `<option value="">Toutes les équipes</option>${opts}`;
   $("#predict-result").innerHTML = "";
   $("#predict-home").innerHTML = opts;
@@ -176,14 +187,14 @@ function renderDetail(id) {
   }).join("");
 
   const insights = Analysis.preMatchInsights(m.home, m.away)
-    .map(i => `<div class="insight ${i.warn ? "warn" : ""}">${i.text}</div>`).join("");
+    .map(i => `<div class="insight ${i.warn ? "warn" : ""}">${esc(i.text)}</div>`).join("");
 
   $("#match-detail").innerHTML = `
     <div class="card">
       <div class="scoreboard">
-        <div><div class="team-name">${dot(m.home)}${H.name}</div><div class="meta">Domicile · ${ord(Analysis.position(m.home))}</div></div>
-        <div><div class="big-score">${m.time.replace(":", "h")}</div><div class="meta">Journée ${m.day} · ${fmtDate(m.date)}</div></div>
-        <div><div class="team-name">${A.name}${dot(m.away)}</div><div class="meta">Extérieur · ${ord(Analysis.position(m.away))}</div></div>
+        <div><div class="team-name">${dot(m.home)}${esc(H.name)}</div><div class="meta">Domicile · ${ord(Analysis.position(m.home))}</div></div>
+        <div><div class="big-score">${esc(String(m.time).replace(":", "h"))}</div><div class="meta">Journée ${esc(m.day)} · ${esc(fmtDate(m.date))}</div></div>
+        <div><div class="team-name">${esc(A.name)}${dot(m.away)}</div><div class="meta">Extérieur · ${ord(Analysis.position(m.away))}</div></div>
       </div>
     </div>
     ${predictionBlocks(m.home, m.away)}
@@ -204,7 +215,6 @@ function renderDetail(id) {
 }
 
 // ---------- Compositions probables ----------
-const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const lineLabel = (i, n) => (i === 0 ? "Gardien" : i === 1 ? "Défense" : i === n - 1 ? "Attaque" : "Milieu");
 
 function pitchHtml(teamId, side, data) {
@@ -212,7 +222,7 @@ function pitchHtml(teamId, side, data) {
   const lines = [...data.lignes].reverse().map(line => `
     <div class="pitch-line">${line.map(p => `
       <div class="player" title="${esc(p.nom)} (${esc(p.poste)})">
-        <span class="shirt" style="background:${team(teamId).color || "var(--accent-2)"}">${esc(p.poste)}</span>
+        <span class="shirt" style="background:${safeColor(team(teamId).color)}">${esc(p.poste)}</span>
         <span class="pname">${esc(p.nom)}</span>
       </div>`).join("")}
     </div>`).join("");
@@ -238,7 +248,7 @@ async function loadLineups(m) {
   btn.textContent = "Recherche en cours…";
   $("#lineups-msg").innerHTML = `<p class="subtitle loading">L'IA consulte la presse sportive…</p>`;
   try {
-    const res = await fetch("/api/lineup", {
+    const res = await footApiFetch("/api/lineup", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: m.id, home: team(m.home).name, away: team(m.away).name, date: m.date, league: CURRENT_LEAGUE.name }),
@@ -275,8 +285,10 @@ function showSavedLineups(m) {
 function renderLineups(m, d) {
     const box = $("#lineups");
     const fiab = { "élevée": "ok", "moyenne": "mid", "faible": "low" }[d.fiabilite] || "mid";
-    const sources = d.sources.length
-      ? `Sources : ${d.sources.map(s => `<a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">${esc(s.titre)}</a>`).join(" · ")}`
+    const verifiedSources = (Array.isArray(d.sources) ? d.sources : [])
+      .map(s => ({ ...s, safeUrl: safeUrl(s.url) })).filter(s => s.safeUrl);
+    const sources = verifiedSources.length
+      ? `Sources : ${verifiedSources.map(s => `<a href="${esc(s.safeUrl)}" target="_blank" rel="noopener noreferrer">${esc(s.titre)}</a>`).join(" · ")}`
       : "Sources : aucune source précise retenue.";
     box.innerHTML = `
       <div class="lineup-meta">
@@ -294,7 +306,7 @@ function renderStandings() {
   $("#standings-table tbody").innerHTML = Analysis.standings().map((t, i) => `
     <tr class="${i >= n - releg ? "releg" : i >= n - releg - barrage ? "barrage" : ""}">
       <td>${i + 1}</td>
-      <td class="left">${dot(t.id)}${t.name}</td>
+      <td class="left">${dot(t.id)}${esc(t.name)}</td>
       <td>${t.P}</td><td>${t.W}</td><td>${t.D}</td><td>${t.L}</td>
       <td>${t.GF}</td><td>${t.GA}</td><td>${t.GD > 0 ? "+" : ""}${t.GD}</td>
       <td>${(t.GF / t.P).toFixed(1)}</td>
@@ -317,7 +329,7 @@ $("#predict-btn").addEventListener("click", renderPrediction);
 function renderLeagueBar() {
   $("#league-bar").innerHTML = LEAGUE_ORDER.map(id => {
     const l = LEAGUES[id];
-    return `<button class="league-btn ${l === CURRENT_LEAGUE ? "active" : ""}" data-league="${id}">${l.flag} ${l.short}</button>`;
+    return `<button class="league-btn ${l === CURRENT_LEAGUE ? "active" : ""}" data-league="${esc(id)}">${esc(l.flag)} ${esc(l.short)}</button>`;
   }).join("");
   document.querySelectorAll(".league-btn").forEach(b =>
     b.addEventListener("click", () => switchLeague(b.dataset.league)));
@@ -347,7 +359,7 @@ async function switchLeague(id, { keepView = false } = {}) {
 async function loadLiveData(league) {
   if (league.liveLoaded || league.liveFailed) return false;
   try {
-    const res = await fetch(`/api/league?code=${league.apiCode}`);
+    const res = await footApiFetch(`/api/league?code=${encodeURIComponent(league.apiCode)}`);
     const data = await res.json().catch(() => null);
     // Site hébergé sans server.py (hébergement statique) : pas d'API, on reste sur les données enregistrées
     if (!data) throw new Error("");

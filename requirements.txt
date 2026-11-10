@@ -1,1 +1,3 @@
 anthropic>=0.125
+mcp[cli]>=2.0
+tzdata>=2026.1; platform_system == "Windows"

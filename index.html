@@ -9,11 +9,14 @@
 <body>
   <header class="topbar">
     <div class="logo">⚽ Foot<span>Analyse</span></div>
-    <nav>
-      <button class="nav-btn active" data-view="dashboard">Tableau de bord</button>
-      <button class="nav-btn" data-view="matches">Prochains matchs</button>
+    <nav aria-label="Navigation principale">
+      <button class="nav-btn active" data-view="dashboard">Accueil</button>
+      <button class="nav-btn" data-view="live">Direct</button>
+      <button class="nav-btn" data-view="news">Actualités</button>
+      <button class="nav-btn" data-view="matches">Matchs</button>
       <button class="nav-btn" data-view="standings">Classement</button>
-      <button class="nav-btn" data-view="predict">Pronostic</button>
+      <button class="nav-btn" data-view="predict">Pronostics</button>
+      <button class="nav-btn" data-view="training">Coaching</button>
     </nav>
   </header>
   <div id="league-bar" class="league-bar" aria-label="Choix du championnat"></div>
@@ -38,6 +41,31 @@
         <h2>Prochaine journée</h2>
         <div id="next-matches" class="match-list"></div>
       </div>
+    </section>
+
+    <!-- MATCHS EN DIRECT -->
+    <section id="view-live" class="view">
+      <div class="section-heading">
+        <div>
+          <h1>Matchs en direct</h1>
+          <p class="subtitle" id="live-info">Ouvre cette rubrique pour charger les matchs du jour.</p>
+        </div>
+        <button id="refresh-live" class="secondary" type="button">Actualiser</button>
+      </div>
+      <p class="data-notice">Les scores et leur délai dépendent du fournisseur de données et de l'abonnement utilisé.</p>
+      <div id="live-matches" class="live-grid" aria-live="polite"></div>
+    </section>
+
+    <!-- ACTUALITÉS -->
+    <section id="view-news" class="view">
+      <div class="section-heading">
+        <div>
+          <h1>Actualités football</h1>
+          <p class="subtitle" id="news-info">Ouvre cette rubrique pour charger les dernières actualités.</p>
+        </div>
+        <button id="refresh-news" class="secondary" type="button">Actualiser</button>
+      </div>
+      <div id="news-list" class="news-grid" aria-live="polite"></div>
     </section>
 
     <!-- PROCHAINS MATCHS -->
@@ -85,6 +113,73 @@
       </div>
       <div id="predict-result"></div>
     </section>
+
+    <!-- COACHING -->
+    <section id="view-training" class="view">
+      <h1>Coaching personnalisé</h1>
+      <p class="subtitle">Renseigne ton profil pour créer un programme adapté. Tes informations restent uniquement dans ton navigateur.</p>
+      <form id="player-profile-form" class="card profile-form">
+        <label>
+          Pays où tu joues
+          <input name="country" type="text" maxlength="60" placeholder="Ex. France, Sénégal, Belgique" required />
+        </label>
+        <label>
+          Niveau
+          <select name="level" required>
+            <option value="débutant">Débutant</option>
+            <option value="loisir">Loisir</option>
+            <option value="amateur" selected>Amateur</option>
+            <option value="régional">Régional</option>
+            <option value="semi-professionnel">Semi-professionnel</option>
+            <option value="professionnel">Professionnel</option>
+          </select>
+        </label>
+        <label>
+          Poste
+          <select name="position" required>
+            <option value="gardien">Gardien</option>
+            <option value="defenseur">Défenseur</option>
+            <option value="milieu" selected>Milieu</option>
+            <option value="ailier">Ailier</option>
+            <option value="attaquant">Attaquant</option>
+          </select>
+        </label>
+        <label>
+          Pied dominant
+          <select name="foot" required>
+            <option value="droit">Droit</option>
+            <option value="gauche">Gauche</option>
+            <option value="deux pieds">Deux pieds</option>
+          </select>
+        </label>
+        <label>
+          Objectif principal
+          <select name="goal" required>
+            <option value="technique">Technique</option>
+            <option value="vitesse">Vitesse</option>
+            <option value="endurance">Endurance</option>
+            <option value="tactique">Tactique</option>
+            <option value="finition">Finition</option>
+          </select>
+        </label>
+        <label>
+          Séances par semaine
+          <input name="sessions" type="number" min="1" max="5" value="2" required />
+        </label>
+        <label>
+          Durée par séance
+          <select name="duration" required>
+            <option value="30">30 minutes</option>
+            <option value="45">45 minutes</option>
+            <option value="60" selected>60 minutes</option>
+            <option value="90">90 minutes</option>
+            <option value="120">120 minutes</option>
+          </select>
+        </label>
+        <button class="primary profile-submit" type="submit">Créer mon programme</button>
+      </form>
+      <div id="training-plan" class="training-grid" aria-live="polite"></div>
+    </section>
   </main>
 
   <!-- CHATBOT (emplacement prêt pour la future intégration) -->
@@ -106,6 +201,7 @@
 
   <footer>Projet de groupe – FootAnalyse © 2026 · Données : football-data.org (en direct) ou données enregistrées (Wikipédia, Foot Mercato, ligue1.com, Starting11)</footer>
 
+  <script src="config.js"></script>
   <script src="data.js"></script>
   <script src="lineups-data.js"></script>
   <script src="players-data.js"></script>
@@ -120,5 +216,7 @@
   <script src="chat-local.js"></script>
   <script src="chatbot.js"></script>
   <script src="app.js"></script>
+  <script src="live.js"></script>
+  <script src="training.js"></script>
 </body>
 </html>

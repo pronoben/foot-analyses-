@@ -1,81 +1,131 @@
 # ⚽ FootAnalyse
 
-Site d'analyse des matchs des **5 grands championnats** (🇫🇷 Ligue 1, 🏴󠁧󠁢󠁥󠁮󠁧󠁿 Premier League, 🇪🇸 Liga, 🇮🇹 Serie A, 🇩🇪 Bundesliga) avec un **chatbot** d'analyse — projet de groupe.
+Application web d'analyse des matchs des cinq grands championnats : Ligue 1,
+Premier League, Liga, Serie A et Bundesliga. Le projet réunit les résultats,
+les statistiques, les pronostics, les compositions probables et un espace de
+coaching personnalisé.
 
 ## Fonctionnalités
 
-- **Tableau de bord** : chiffres clés de la saison, meilleures attaques et défenses, prochaine journée.
-- **Prochains matchs** : calendrier avec probabilités, analyse d'avant-match pour chaque match.
-- **Compositions probables** : terrain avec les 11 joueurs, absents et sources ; actualisables par l'IA (recherche web).
-- **Choix du championnat** en haut de page (mémorisé), mêmes détails pour les 5 championnats.
-- **Classement** (zones de relégation / barrage selon le championnat).
-- **Pronostic libre** : n'importe quelle affiche, modèle de Poisson (probabilités, buts attendus, scores probables).
-- **Chatbot** :
-  - sans clé : moteur d'analyse local (pronostics, compos, absents, nombre de buts, stats des joueurs, comparaisons…), qui change tout seul de championnat selon l'équipe ou le joueur cité ;
-  - avec la clé Anthropic : Claude répond à toutes les questions de football, avec recherche web et toute l'analyse du site.
+- **Accueil** : chiffres clés, meilleures attaques et défenses, prochaine journée.
+- **Direct** : matchs du jour et scores transmis par football-data.org.
+- **Actualités** : titres provenant de flux RSS/Atom configurés côté serveur.
+- **Matchs et compositions** : calendrier, analyse d'avant-match, onze probable et absents.
+- **Classement** : classement des cinq championnats et zones importantes.
+- **Pronostics** : modèle de Poisson, buts attendus et scores les plus probables.
+- **Coaching** : programme local selon le niveau, le pays, le poste, le pied dominant,
+  l'objectif, la durée et le nombre de séances.
+- **Assistant** : analyse locale sans clé ; fonctions Claude facultatives via le backend.
+- **MCP en lecture seule** : accès aux données football pour un assistant compatible.
 
-## Lancer le site
+Les pronostics sont des estimations statistiques, pas des certitudes ni des conseils
+de pari. Le programme de coaching est une base éducative et ne remplace pas un
+entraîneur ou un professionnel de santé.
 
-Il faut **Python 3.9 ou plus**.
+## Lancer le projet sur Windows
 
-```bash
-# 1. Installer la bibliothèque du chatbot IA (facultatif : le reste marche sans)
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+Il faut Python 3.11 ou plus. Dans PowerShell :
 
-# 2. Créer son fichier de clés (facultatif)
-cp .env.example .env
-# puis ouvrir .env et coller ses clés
-
-# 3. Lancer le serveur
-.venv/bin/python server.py      # ou : python3 server.py
+```powershell
+py -m venv .venv
+.\.venv\Scripts\python -m pip install -r requirements.txt
+Copy-Item .env.example .env
+.\.venv\Scripts\python server.py
 ```
 
-Ouvrir ensuite http://localhost:8765
+Ouvrir ensuite <http://localhost:8765>. Les clés dans `.env` sont facultatives :
+le site conserve ses données enregistrées et son moteur local si elles sont absentes.
 
-### Clés API (facultatives)
+## Configuration du backend
 
-| Clé | Sert à | Où l'obtenir |
-|---|---|---|
-| `FOOTBALL_DATA_KEY` | Classement, calendrier et buteurs en direct | https://www.football-data.org/client/register (gratuit) |
-| `ANTHROPIC_API_KEY` | Chatbot IA et compositions actualisées | https://platform.claude.com/settings/keys (payant à l'usage) |
+| Variable | Usage |
+|---|---|
+| `FOOTBALL_DATA_KEY` | Matchs du jour, classement, calendrier et buteurs via [football-data.org](https://www.football-data.org/client/register) |
+| `ANTHROPIC_API_KEY` | Chatbot Claude et compositions actualisées |
+| `ENABLE_PUBLIC_AI` | Autorise `/api/chat` et `/api/lineup` lorsqu'il vaut `true` |
+| `ALLOWED_ORIGINS` | Liste des sites autorisés à appeler le backend |
+| `NEWS_FEEDS` | Flux RSS/Atom HTTPS séparés par des virgules |
+| `TRUST_PROXY` | À activer uniquement derrière un proxy maîtrisé |
 
-Sans clé, le site utilise les **données enregistrées** (après les matchs du 08/11/2026, saison 2026-2027).
+Le forfait gratuit de football-data.org peut fournir des scores différés. Un vrai
+direct commercial demande un fournisseur et un abonnement adaptés. L'interface
+indique donc clairement que le délai dépend de la source.
 
-⚠️ **Ne jamais mettre de clé dans le code ni sur GitHub.** Le fichier `.env` est exclu par le `.gitignore`.
+### Sécurité avant une mise en ligne publique
+
+- Ne jamais placer une clé dans `config.js`, le HTML ou GitHub Pages.
+- Garder `ENABLE_PUBLIC_AI=false` tant qu'une authentification par utilisateur
+  n'est pas ajoutée. Les limites de requêtes réduisent l'abus mais ne remplacent
+  pas une connexion sécurisée.
+- Restreindre `ALLOWED_ORIGINS` au domaine public exact.
+- Déployer le backend derrière HTTPS et conserver `.env` hors de Git.
+- Les routes IA utilisent le contexte construit par le serveur, pas un contexte
+  arbitraire envoyé par le navigateur.
+
+## GitHub Pages et backend
+
+GitHub Pages ne sert que les fichiers statiques : il ne peut pas exécuter
+`server.py` ni `mcp_server.py`. Pour rendre le Direct, les Actualités et les fonctions
+IA disponibles sur le site public :
+
+1. Déployer ce dépôt sur un hébergeur Python avec HTTPS.
+2. Configurer les variables d'environnement sur cet hébergeur.
+3. Dans `config.js`, mettre l'URL publique dans `apiBase`, par exemple :
+
+```js
+window.FOOTANALYSE_CONFIG = Object.freeze({
+  apiBase: "https://api.exemple.fr",
+});
+```
+
+4. Ajouter `https://pronoben.github.io` à `ALLOWED_ORIGINS`.
+5. Vérifier `/api/live`, `/api/news` et le site depuis un vrai navigateur.
+
+Sans backend déployé, les rubriques historiques et le coaching local continuent de
+fonctionner, tandis que Direct et Actualités affichent une explication claire.
+
+## Accès par une IA avec MCP
+
+`mcp_server.py` expose en lecture seule les championnats, classements, prochains
+matchs et meilleurs buteurs aux assistants compatibles MCP.
+
+```powershell
+.\.venv\Scripts\python mcp_server.py
+```
+
+Le serveur écoute par défaut sur `http://127.0.0.1:8000/mcp` en Streamable HTTP.
+L'adresse locale n'est accessible que sur cet ordinateur. Pour partager l'accès,
+déployer le serveur derrière HTTPS ou utiliser un tunnel sécurisé pendant les tests.
+N'ajoutez pas d'outil d'écriture sans authentification et autorisations séparées.
 
 ## Organisation du code
 
 | Partie | Fichiers |
 |---|---|
-| Structure et design | `index.html`, `css/style.css` |
-| Affichage des pages | `js/app.js` |
-| Calculs et pronostics (modèle de Poisson) | `js/analysis.js` |
-| Championnats | `js/leagues.js` (registre + changement de championnat), `js/leagues/*.js` (un fichier par championnat : équipes, classement, calendrier, compos, stats joueurs) |
-| Données Ligue 1 | `js/data.js` (classement, calendrier), `js/players-data.js` (stats joueurs), `js/lineups-data.js` (compos) |
-| Chatbot – interface | `js/chatbot.js` |
-| Chatbot – analyse locale | `js/chat-local.js` (matchs), `js/chat-players.js` (joueurs) |
-| Serveur | `server.py` (site + routes `/api/league?code=…`, `/api/chat`, `/api/lineup`) |
-| IA (Claude) | `chatbot_ai.py` (chatbot), `lineups_ai.py` (compositions) |
+| Structure et design | `index.html`, `style.css` |
+| Navigation et analyses | `app.js`, `analysis.js` |
+| Direct et actualités | `live.js`, routes `/api/live` et `/api/news` dans `server.py` |
+| Coaching | `training.js` |
+| Configuration publique | `config.js` (URL du backend uniquement, jamais de clé) |
+| Données des championnats | `data.js`, `leagues.js`, fichiers de championnat |
+| Assistant local et interface | `chatbot.js`, `chat-local.js`, `chat-players.js` |
+| Backend web | `server.py` |
+| Serveur MCP | `mcp_server.py` |
+| IA Claude | `chatbot_ai.py`, `lineups_ai.py` |
+| Vérifications | `tests/` |
 
 ## Travailler à deux
 
-1. Récupérer les dernières modifications avant de commencer (**Pull**).
-2. Travailler de préférence sur des fichiers différents (ex. l'un sur le chatbot, l'autre sur le design).
-3. Pour une grosse fonctionnalité, créer une **branche**, puis la fusionner.
-4. Envoyer ses modifications avec un message clair (**Commit** puis **Push**).
+1. Faire un **Pull** avant de commencer.
+2. Créer une branche pour chaque grosse évolution.
+3. Faire des commits courts avec un message clair.
+4. Ouvrir une Pull Request et relire les changements avant de fusionner.
+5. Ne jamais committer `.env`, `.venv` ou une clé API.
 
-## Mettre à jour les données sans clé
+## Données enregistrées
 
-- Autres championnats : tout est dans `js/leagues/<championnat>.js` (`standings`, `upcoming`, `lineups`, `players`).
-- Ligue 1 – classement et prochains matchs : `js/data.js` (`STANDINGS`, `UPCOMING`).
-- Stats des joueurs : `js/players-data.js`.
-- Compositions : `js/lineups-data.js` (une ligne par poste, joueurs séparés par `|`).
+Sans clé, les écrans historiques utilisent les données enregistrées dans les fichiers
+JavaScript. Leur date est affichée dans l'interface afin de ne pas les confondre avec
+des données en direct.
 
-## Sources des données enregistrées
-
-- Classement : [Wikipédia – 2026-27 Ligue 1](https://en.wikipedia.org/wiki/2026%E2%80%9327_Ligue_1)
-- Calendrier : foot-actu.com, footmercato.net
-- Compositions : [ligue1.com – compositions probables J10](https://ligue1.com/fr/articles/l1_article_5704-les-compositions-probables-ligue-1-2026-2027)
-- Stats joueurs : [Foot Mercato – buteurs](https://www.footmercato.net/france/ligue-1/buteur) et [joueurs décisifs](https://www.footmercato.net/france/ligue-1/decisif) (mêmes pages pour chaque championnat)
-- Autres championnats : classements Wikipédia, calendriers Foot Mercato, compositions [Starting11](https://starting11.com/premier-league) (sources détaillées en tête de chaque fichier `js/leagues/*.js`)
+Sources indiquées dans le projet : Wikipédia, Foot Mercato, ligue1.com et Starting11.
