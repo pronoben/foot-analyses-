@@ -14,6 +14,7 @@
       <button class="nav-btn" data-view="matches">Prochains matchs</button>
       <button class="nav-btn" data-view="standings">Classement</button>
       <button class="nav-btn" data-view="predict">Pronostic</button>
+      <button class="nav-btn" data-view="coach">🏋️ Coach</button>
     </nav>
   </header>
   <div id="league-bar" class="league-bar" aria-label="Choix du championnat"></div>
@@ -85,6 +86,38 @@
       </div>
       <div id="predict-result"></div>
     </section>
+    <!-- COACH -->
+    <section id="view-coach" class="view">
+      <h1>🏋️ Coach – Entraîne-toi comme les pros</h1>
+      <p class="subtitle">Des séances complètes, inspirées des qualités des plus grands joueurs, à visualiser et copier. Les routines exactes des pros ne sont pas publiques : ces séances travaillent les mêmes qualités avec des exercices de formation classiques.</p>
+      <div class="coach-layout">
+        <div>
+          <div class="filters">
+            <select id="coach-quality"></select>
+            <select id="coach-level"></select>
+            <input id="coach-search" type="text" placeholder="Chercher un joueur, un poste…" />
+          </div>
+          <div id="coach-grid" class="session-grid"></div>
+        </div>
+        <aside class="card coach-chat">
+          <h2>💬 Ton coach</h2>
+          <div id="coach-messages" class="chat-messages">
+            <div class="msg bot">Salut, je suis ton coach ! Dis-moi ton poste, ton niveau et ce que tu veux améliorer : je te propose des séances et un programme.</div>
+          </div>
+          <div id="coach-suggestions" class="chat-suggestions"></div>
+          <form id="coach-form" class="chat-form">
+            <input id="coach-input" type="text" placeholder="Ex. : je veux être plus rapide" autocomplete="off" />
+            <button type="submit">Envoyer</button>
+          </form>
+        </aside>
+      </div>
+    </section>
+
+    <!-- FICHE D'UNE SÉANCE -->
+    <section id="view-session" class="view">
+      <button class="back-btn" data-view="coach">← Retour aux séances</button>
+      <div id="session-detail"></div>
+    </section>
   </main>
 
   <!-- CHATBOT (emplacement prêt pour la future intégration) -->
@@ -120,5 +153,7 @@
   <script src="chat-local.js"></script>
   <script src="chatbot.js"></script>
   <script src="app.js"></script>
+  <script src="training-data.js"></script>
+  <script src="coach.js"></script>
 </body>
 </html>

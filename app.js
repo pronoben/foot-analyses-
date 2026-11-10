@@ -22,6 +22,7 @@ const fmtDate = d => {
 // ---------- Navigation ----------
 function showView(name) {
   document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+  document.body.dataset.view = name;
   $(`#view-${name}`).classList.add("active");
   document.querySelectorAll(".nav-btn").forEach(b => b.classList.toggle("active", b.dataset.view === name));
   window.scrollTo({ top: 0, behavior: "smooth" });
