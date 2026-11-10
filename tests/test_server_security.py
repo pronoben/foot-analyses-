@@ -11,6 +11,8 @@ class PublicFilesTests(unittest.TestCase):
         self.assertTrue(server.is_public_path("/index.html"))
         self.assertTrue(server.is_public_path("/style.css"))
         self.assertTrue(server.is_public_path("/live.js"))
+        self.assertTrue(server.is_public_path("/coach.js"))
+        self.assertTrue(server.is_public_path("/training-data.js"))
 
     def test_internal_and_nested_files_are_private(self):
         for path in (

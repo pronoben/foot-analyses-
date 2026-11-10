@@ -13,8 +13,8 @@ coaching personnalisé.
 - **Matchs et compositions** : calendrier, analyse d'avant-match, onze probable et absents.
 - **Classement** : classement des cinq championnats et zones importantes.
 - **Pronostics** : modèle de Poisson, buts attendus et scores les plus probables.
-- **Coaching** : programme local selon le niveau, le pays, le poste, le pied dominant,
-  l'objectif, la durée et le nombre de séances.
+- **Coach** : catalogue de séances inspirées des qualités de joueurs professionnels,
+  filtres par niveau et qualité, fiches détaillées et programme local personnalisé.
 - **Assistant** : analyse locale sans clé ; fonctions Claude facultatives via le backend.
 - **MCP en lecture seule** : accès aux données football pour un assistant compatible.
 
@@ -105,7 +105,7 @@ N'ajoutez pas d'outil d'écriture sans authentification et autorisations sépar�
 | Structure et design | `index.html`, `style.css` |
 | Navigation et analyses | `app.js`, `analysis.js` |
 | Direct et actualités | `live.js`, routes `/api/live` et `/api/news` dans `server.py` |
-| Coaching | `training.js` |
+| Coaching | `training-data.js`, `coach.js` |
 | Configuration publique | `config.js` (URL du backend uniquement, jamais de clé) |
 | Données des championnats | `data.js`, `leagues.js`, fichiers de championnat |
 | Assistant local et interface | `chatbot.js`, `chat-local.js`, `chat-players.js` |

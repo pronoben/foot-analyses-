@@ -265,13 +265,13 @@ button:disabled { opacity: .6; cursor: wait; }
 .league-btn:hover { color: var(--text); border-color: var(--accent); }
 .league-btn.active { color: #062; background: var(--accent); border-color: var(--accent); font-weight: 700; }
 
-/* ---------- Direct, actualités et coaching ---------- */
+/* ---------- Direct et actualités ---------- */
 .section-heading { display: flex; justify-content: space-between; align-items: start; gap: 16px; }
 .data-notice {
   color: #f8d48a; background: rgba(245, 158, 11, .08); border: 1px solid rgba(245, 158, 11, .25);
   border-radius: 10px; padding: 10px 14px; margin: -8px 0 20px; font-size: .88rem;
 }
-.live-grid, .news-grid, .training-grid { display: grid; gap: 14px; }
+.live-grid, .news-grid { display: grid; gap: 14px; }
 .live-card { padding: 16px 18px; }
 .live-card-head { display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: .82rem; margin-bottom: 16px; }
 .live-status { padding: 4px 9px; background: var(--card-2); border-radius: 999px; color: var(--muted); font-weight: 700; }
@@ -290,16 +290,6 @@ button:disabled { opacity: .6; cursor: wait; }
 .news-source { color: var(--accent); font-size: .78rem; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
 .news-card small { color: var(--muted); }
 .empty-state { color: var(--muted); text-align: center; padding: 34px 20px; }
-.profile-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-.profile-form label { display: flex; flex-direction: column; gap: 7px; color: var(--muted); font-size: .88rem; font-weight: 650; }
-.profile-form label input, .profile-form label select { width: 100%; color: var(--text); }
-.profile-submit { align-self: end; min-height: 43px; }
-.training-grid { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
-.training-grid .card { margin: 0; }
-.plan-intro { grid-column: 1 / -1; border-color: rgba(34, 197, 94, .45); background: linear-gradient(135deg, rgba(34, 197, 94, .11), var(--card)); }
-.training-session ol { padding-left: 20px; color: var(--muted); }
-.training-session li { margin: 8px 0; padding-left: 4px; }
-.training-note { grid-column: 1 / -1; color: var(--muted); font-size: .85rem; }
 
 @media (max-width: 760px) {
   body { padding-bottom: 72px; }
@@ -328,7 +318,6 @@ button:disabled { opacity: .6; cursor: wait; }
   .live-score > div { flex-direction: column; gap: 5px; font-size: .82rem; text-align: center !important; }
   .live-score > div:first-child { justify-content: center; }
   .live-score > div:last-child { justify-content: center; }
-  .profile-form { grid-template-columns: 1fr; }
   .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .chat-toggle { right: 16px; bottom: 88px; width: 50px; height: 50px; font-size: 1.35rem; }
   .chat-panel { right: 12px; bottom: 158px; max-width: calc(100vw - 24px); height: min(520px, calc(100vh - 190px)); }
@@ -338,3 +327,42 @@ button:disabled { opacity: .6; cursor: wait; }
 @media (max-width: 340px) {
   .kpis { grid-template-columns: 1fr; }
 }
+/* ---------- Coach ---------- */
+.coach-layout { display: grid; grid-template-columns: 1fr 360px; gap: 20px; align-items: start; }
+@media (max-width: 900px) { .coach-layout { grid-template-columns: 1fr; } }
+.filters input[type="text"] { flex: 1; min-width: 180px; }
+.session-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+.session-card {
+  background: var(--card); border: 1px solid #2a333d; border-radius: var(--radius); padding: 16px;
+  color: var(--text); font: inherit; text-align: left; width: 100%;
+  cursor: pointer; transition: transform .15s, border-color .15s;
+}
+.session-card:hover { transform: translateY(-3px); border-color: var(--accent); }
+.session-card h3 { font-size: 1rem; margin: 6px 0; }
+.session-quality { font-size: 0.8rem; color: var(--accent); font-weight: 700; }
+.session-player { font-size: 0.85rem; color: var(--muted); margin-bottom: 10px; }
+.session-meta { display: flex; flex-wrap: wrap; gap: 10px; font-size: 0.8rem; color: var(--muted); }
+.coach-chat { position: sticky; top: 80px; display: flex; flex-direction: column; height: 560px; padding: 14px; }
+.coach-chat .chat-messages { flex: 1; padding: 4px 0; }
+.coach-chat .chat-form { padding: 10px 0 0; border-top: none; }
+.msg-actions { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.msg-actions button {
+  background: var(--accent); color: #062; border: none; border-radius: 8px; padding: 6px 10px;
+  font-weight: 700; cursor: pointer; text-align: left; font-size: 0.8rem;
+}
+.exercise { display: grid; grid-template-columns: 90px 1fr; gap: 14px; padding: 12px 0; border-bottom: 1px solid #2a333d; }
+.exercise:last-child { border-bottom: none; }
+.ex-time { color: var(--accent); font-weight: 700; font-size: 0.85rem; }
+.ex-body h3 { margin: 0 0 4px; font-size: 1rem; }
+.ex-body p { color: var(--text); opacity: .9; font-size: 0.92rem; }
+.session-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+button.secondary { background: var(--card-2); color: var(--text); border: 1px solid #2a333d; padding: 10px 20px; border-radius: 8px; font-weight: 700; cursor: pointer; }
+
+@media print {
+  .topbar, .league-bar, footer, .chat-toggle, .chat-panel, .back-btn, .session-actions { display: none !important; }
+  body { background: #fff; color: #000; }
+  .card { border: 1px solid #ccc; background: #fff; }
+  .insight, .ex-body p, .subtitle { color: #000; background: #f4f4f4; }
+}
+
+body[data-view="coach"] .league-bar, body[data-view="session"] .league-bar { display: none; }

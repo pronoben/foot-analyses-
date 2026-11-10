@@ -16,7 +16,7 @@
       <button class="nav-btn" data-view="matches">Matchs</button>
       <button class="nav-btn" data-view="standings">Classement</button>
       <button class="nav-btn" data-view="predict">Pronostics</button>
-      <button class="nav-btn" data-view="training">Coaching</button>
+      <button class="nav-btn" data-view="coach">🏋️ Coach</button>
     </nav>
   </header>
   <div id="league-bar" class="league-bar" aria-label="Choix du championnat"></div>
@@ -113,72 +113,37 @@
       </div>
       <div id="predict-result"></div>
     </section>
+    <!-- COACH -->
+    <section id="view-coach" class="view">
+      <h1>🏋️ Coach – Entraîne-toi comme les pros</h1>
+      <p class="subtitle">Des séances complètes, inspirées des qualités des plus grands joueurs, à visualiser et copier. Les routines exactes des pros ne sont pas publiques : ces séances travaillent les mêmes qualités avec des exercices de formation classiques.</p>
+      <div class="coach-layout">
+        <div>
+          <div class="filters">
+            <select id="coach-quality"></select>
+            <select id="coach-level"></select>
+            <input id="coach-search" type="text" placeholder="Chercher un joueur, un poste…" />
+          </div>
+          <div id="coach-grid" class="session-grid"></div>
+        </div>
+        <aside class="card coach-chat">
+          <h2>💬 Ton coach</h2>
+          <div id="coach-messages" class="chat-messages">
+            <div class="msg bot">Salut, je suis ton coach ! Dis-moi ton poste, ton niveau et ce que tu veux améliorer : je te propose des séances et un programme.</div>
+          </div>
+          <div id="coach-suggestions" class="chat-suggestions"></div>
+          <form id="coach-form" class="chat-form">
+            <input id="coach-input" type="text" placeholder="Ex. : je veux être plus rapide" autocomplete="off" />
+            <button type="submit">Envoyer</button>
+          </form>
+        </aside>
+      </div>
+    </section>
 
-    <!-- COACHING -->
-    <section id="view-training" class="view">
-      <h1>Coaching personnalisé</h1>
-      <p class="subtitle">Renseigne ton profil pour créer un programme adapté. Tes informations restent uniquement dans ton navigateur.</p>
-      <form id="player-profile-form" class="card profile-form">
-        <label>
-          Pays où tu joues
-          <input name="country" type="text" maxlength="60" placeholder="Ex. France, Sénégal, Belgique" required />
-        </label>
-        <label>
-          Niveau
-          <select name="level" required>
-            <option value="débutant">Débutant</option>
-            <option value="loisir">Loisir</option>
-            <option value="amateur" selected>Amateur</option>
-            <option value="régional">Régional</option>
-            <option value="semi-professionnel">Semi-professionnel</option>
-            <option value="professionnel">Professionnel</option>
-          </select>
-        </label>
-        <label>
-          Poste
-          <select name="position" required>
-            <option value="gardien">Gardien</option>
-            <option value="defenseur">Défenseur</option>
-            <option value="milieu" selected>Milieu</option>
-            <option value="ailier">Ailier</option>
-            <option value="attaquant">Attaquant</option>
-          </select>
-        </label>
-        <label>
-          Pied dominant
-          <select name="foot" required>
-            <option value="droit">Droit</option>
-            <option value="gauche">Gauche</option>
-            <option value="deux pieds">Deux pieds</option>
-          </select>
-        </label>
-        <label>
-          Objectif principal
-          <select name="goal" required>
-            <option value="technique">Technique</option>
-            <option value="vitesse">Vitesse</option>
-            <option value="endurance">Endurance</option>
-            <option value="tactique">Tactique</option>
-            <option value="finition">Finition</option>
-          </select>
-        </label>
-        <label>
-          Séances par semaine
-          <input name="sessions" type="number" min="1" max="5" value="2" required />
-        </label>
-        <label>
-          Durée par séance
-          <select name="duration" required>
-            <option value="30">30 minutes</option>
-            <option value="45">45 minutes</option>
-            <option value="60" selected>60 minutes</option>
-            <option value="90">90 minutes</option>
-            <option value="120">120 minutes</option>
-          </select>
-        </label>
-        <button class="primary profile-submit" type="submit">Créer mon programme</button>
-      </form>
-      <div id="training-plan" class="training-grid" aria-live="polite"></div>
+    <!-- FICHE D'UNE SÉANCE -->
+    <section id="view-session" class="view">
+      <button class="back-btn" data-view="coach">← Retour aux séances</button>
+      <div id="session-detail"></div>
     </section>
   </main>
 
@@ -217,6 +182,7 @@
   <script src="chatbot.js"></script>
   <script src="app.js"></script>
   <script src="live.js"></script>
-  <script src="training.js"></script>
+  <script src="training-data.js"></script>
+  <script src="coach.js"></script>
 </body>
 </html>

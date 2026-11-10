@@ -66,7 +66,8 @@ PUBLIC_FILES = {
     "chatbot.js",
     "app.js",
     "live.js",
-    "training.js",
+    "training-data.js",
+    "coach.js",
 }
 PUBLIC_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".svg", ".ico", ".woff2"}
 
