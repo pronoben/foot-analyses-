@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FootAnalyse – Analyse des 5 grands championnats</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="logo">⚽ Foot<span>Analyse</span></div>
+    <nav>
+      <button class="nav-btn active" data-view="dashboard">Tableau de bord</button>
+      <button class="nav-btn" data-view="matches">Prochains matchs</button>
+      <button class="nav-btn" data-view="standings">Classement</button>
+      <button class="nav-btn" data-view="predict">Pronostic</button>
+    </nav>
+  </header>
+  <div id="league-bar" class="league-bar" aria-label="Choix du championnat"></div>
+
+  <main>
+    <!-- TABLEAU DE BORD -->
+    <section id="view-dashboard" class="view active">
+      <h1><span class="league-name">Ligue 1</span> – Tableau de bord</h1>
+      <p class="subtitle" id="data-info"></p>
+      <div class="kpis" id="kpis"></div>
+      <div class="grid-2">
+        <div class="card">
+          <h2>Meilleures attaques</h2>
+          <div id="top-attack" class="bars"></div>
+        </div>
+        <div class="card">
+          <h2>Meilleures défenses</h2>
+          <div id="top-defense" class="bars"></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Prochaine journée</h2>
+        <div id="next-matches" class="match-list"></div>
+      </div>
+    </section>
+
+    <!-- PROCHAINS MATCHS -->
+    <section id="view-matches" class="view">
+      <h1>Prochains matchs</h1>
+      <p class="subtitle">Clique sur un match pour voir l'analyse d'avant-match. Horaires susceptibles d'être modifiés par la LFP.</p>
+      <div class="filters">
+        <select id="filter-team"><option value="">Toutes les équipes</option></select>
+      </div>
+      <div id="all-matches" class="match-list"></div>
+    </section>
+
+    <!-- ANALYSE D'AVANT-MATCH -->
+    <section id="view-detail" class="view">
+      <button class="back-btn" data-view="matches">← Retour aux matchs</button>
+      <div id="match-detail"></div>
+    </section>
+
+    <!-- CLASSEMENT -->
+    <section id="view-standings" class="view">
+      <h1>Classement <span class="league-name">Ligue 1</span></h1>
+      <p class="subtitle" id="standings-info"></p>
+      <div class="card table-wrap">
+        <table id="standings-table">
+          <thead>
+            <tr>
+              <th>#</th><th class="left">Équipe</th><th>J</th><th>G</th><th>N</th><th>P</th>
+              <th>BP</th><th>BC</th><th>Diff</th><th>Buts/match</th><th>Pts</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- PRONOSTIC -->
+    <section id="view-predict" class="view">
+      <h1>Pronostic libre</h1>
+      <p class="subtitle">Choisis n'importe quelle affiche du championnat sélectionné. Modèle de Poisson basé sur les buts marqués et encaissés cette saison.</p>
+      <div class="card predict-form">
+        <select id="predict-home"></select>
+        <span class="vs">VS</span>
+        <select id="predict-away"></select>
+        <button id="predict-btn" class="primary">Analyser</button>
+      </div>
+      <div id="predict-result"></div>
+    </section>
+  </main>
+
+  <!-- CHATBOT (emplacement prêt pour la future intégration) -->
+  <button id="chat-toggle" class="chat-toggle" aria-label="Ouvrir le chatbot">💬</button>
+  <aside id="chat-panel" class="chat-panel" aria-hidden="true">
+    <div class="chat-header">
+      <strong>Assistant FootAnalyse</strong>
+      <button id="chat-close" aria-label="Fermer">✕</button>
+    </div>
+    <div id="chat-messages" class="chat-messages">
+      <div class="msg bot">Salut ! ⚽ Je suis l'assistant foot de FootAnalyse.<br>Pose-moi n'importe quelle question sur la Ligue 1, la Premier League, la Liga, la Serie A ou la Bundesliga : pronostics, compos probables, absents, stats des joueurs (buts, passes…), comparaisons… ou sur le football en général.</div>
+    </div>
+    <div id="chat-suggestions" class="chat-suggestions"></div>
+    <form id="chat-form" class="chat-form">
+      <input id="chat-input" type="text" placeholder="Pose ta question…" autocomplete="off" />
+      <button type="submit">Envoyer</button>
+    </form>
+  </aside>
+
+  <footer>Projet de groupe – FootAnalyse © 2026 · Données : football-data.org (en direct) ou données enregistrées (Wikipédia, Foot Mercato, ligue1.com, Starting11)</footer>
+
+  <script src="data.js"></script>
+  <script src="lineups-data.js"></script>
+  <script src="players-data.js"></script>
+  <script src="leagues.js"></script>
+  <script src="ligue1.js"></script>
+  <script src="premier-league.js"></script>
+  <script src="liga.js"></script>
+  <script src="serie-a.js"></script>
+  <script src="bundesliga.js"></script>
+  <script src="analysis.js"></script>
+  <script src="chat-players.js"></script>
+  <script src="chat-local.js"></script>
+  <script src="chatbot.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
