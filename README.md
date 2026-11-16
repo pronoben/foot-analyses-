@@ -90,6 +90,46 @@ window.FOOTANALYSE_CONFIG = Object.freeze({
 Sans backend déployé, les rubriques historiques et le coaching local continuent de
 fonctionner, tandis que Direct et Actualités affichent une explication claire.
 
+### Déploiement sur Render
+
+`render.yaml` décrit le service (`python server.py`, contrôle de santé sur
+`/api/health`, dépendances dans `requirements-server.txt`). Variables à définir
+dans Render (la clé ne se met **que** dans Render, jamais dans le dépôt) :
+
+| Variable | Valeur |
+|---|---|
+| `ANTHROPIC_API_KEY` | clé secrète, saisie dans Render |
+| `ENABLE_PUBLIC_AI` | `true` |
+| `ALLOWED_ORIGINS` | `https://pronoben.github.io` |
+| `TRUST_PROXY` | `true` (Render passe par Cloudflare) |
+
+Protections contre les abus et les dépenses :
+
+- 8 questions par 5 minutes et 30 par jour pour chaque visiteur (`CHAT_LIMIT_PER_5MIN`, `CHAT_LIMIT_PER_DAY`) ;
+- plafond global, tous visiteurs confondus : 150 unités par jour et 40 par heure
+  (`AI_DAILY_BUDGET`, `AI_HOURLY_BUDGET` ; 1 question = 1, 1 composition = 3) ;
+- 3 appels IA simultanés au maximum (`AI_MAX_CONCURRENT`) ;
+- questions limitées à 1 000 caractères, conversation bornée, `Origin` obligatoire ;
+- réponses identiques réutilisées pendant 10 minutes sans nouvel appel payant ;
+- recherche limitée à 5 requêtes web et 3 pages lues par question.
+
+Ces compteurs sont en mémoire et repartent à zéro à chaque redéploiement : fixer aussi
+une limite de dépense mensuelle dans la console Anthropic.
+
+Sur l'offre gratuite, Render met le service en veille après 15 minutes sans visite ;
+la première question peut alors attendre environ une minute.
+
+### Règles du chatbot
+
+- Recherche web obligatoire pour les statistiques, scores, classements, actualités,
+  compositions et transferts ; au moins deux sources recherchées.
+- Question ambiguë (« combien de buts a João Pedro ? ») : le chatbot demande d'abord
+  le joueur exact, le club, la saison et la compétition.
+- Chaque réponse vérifiée affiche la date de vérification, les sources consultées
+  (liens cliquables, numéros `[n]` dans le texte) et des sections séparées :
+  Faits vérifiés, Analyse, Prédiction, Limites.
+- Sans recherche réelle ni source HTTPS, aucune affirmation n'est affichée.
+
 ## Accès par une IA avec MCP
 
 `mcp_server.py` expose en lecture seule les championnats, classements, prochains
