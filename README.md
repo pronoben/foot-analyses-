@@ -15,8 +15,9 @@ coaching personnalisé.
 - **Pronostics** : modèle de Poisson, buts attendus et scores les plus probables.
 - **Coach** : catalogue de séances inspirées des qualités de joueurs professionnels,
   filtres par niveau et qualité, fiches détaillées et programme local personnalisé.
-- **Assistant vérifié** : recherche web côté serveur, sources citées, date de
-  vérification et refus de répondre lorsqu'aucune source fiable n'est disponible.
+- **Assistant vérifié et gratuit** : réponses construites à partir de fournisseurs de
+  données (football-data.org, TheSportsDB, OpenLigaDB), sources cliquables, date des
+  données, comparaison des sources et refus de répondre sans donnée vérifiable.
 - **MCP en lecture seule** : accès aux données football pour un assistant compatible.
 
 Les pronostics sont des estimations statistiques, pas des certitudes ni des conseils
@@ -90,45 +91,66 @@ window.FOOTANALYSE_CONFIG = Object.freeze({
 Sans backend déployé, les rubriques historiques et le coaching local continuent de
 fonctionner, tandis que Direct et Actualités affichent une explication claire.
 
+### Chatbot gratuit (par défaut)
+
+Le chatbot ne répond jamais de mémoire : il interroge des fournisseurs de données,
+compare leurs résultats et cite chaque source avec sa date.
+
+| Service | Rôle | Limites gratuites |
+|---|---|---|
+| [football-data.org](https://www.football-data.org/coverage) | Source principale : classements, buteurs, matchs | Clé gratuite, 10 requêtes/minute, 12 compétitions (5 grands championnats, Ligue des champions…), scores légèrement différés |
+| [TheSportsDB](https://www.thesportsdb.com/documentation) | Seconde source pour le haut du classement | Clé publique, 30 requêtes/minute, 5 premières places seulement |
+| [OpenLigaDB](https://api.openligadb.de) | Seconde source Bundesliga (classement, buteurs) | Gratuit, sans clé |
+| Groq (facultatif) | IA gratuite : comprendre une question, rédiger une phrase | Quotas journaliers de l'offre gratuite ; sans carte bancaire, un dépassement est refusé, jamais facturé |
+| Render | Hébergement du serveur | 750 h/mois, mise en veille après 15 min ; sans moyen de paiement, suspension au lieu de facturation |
+
+Fonctionnement à chaque question (`free_chat.py`, `free_sources.py`) :
+
+1. comprendre la question (règles simples ; l'IA gratuite ne sert qu'en secours et
+   ne peut que choisir parmi des catégories fixées) ;
+2. demander ce qui manque : pour « Combien de buts a João Pedro ? », le joueur exact,
+   le club, la saison et la compétition ;
+3. consulter les sources (cache de 10 minutes partagé entre tous les visiteurs) ;
+4. comparer les sources quand il y en a deux et signaler tout désaccord ;
+5. confier les faits à l'IA gratuite pour une phrase simple : la phrase est rejetée
+   si elle contient un nombre absent des données ;
+6. répondre avec les sections Réponse courte, Faits vérifiés, Analyse (calculs),
+   Comparaison des sources, Limites, la date des données et les liens des sources.
+
+Questions couvertes (saison en cours) : classement, position d'une équipe, meilleurs
+buteurs, buts d'un joueur (championnat, Ligue des champions ou total vérifiable),
+dernier résultat, prochain match. Coupes nationales, Ligue Europa, saisons passées
+et pronostics sont refusés avec une explication. Toute demande de clé, de mot de
+passe ou d'instruction interne est refusée.
+
+Quotas : chaque fournisseur a un compteur côté serveur réglé sous la limite
+officielle. Quand il est atteint, le chatbot l'annonce (« quota gratuit atteint,
+réessaie dans N secondes ») sans appeler le fournisseur.
+
 ### Déploiement sur Render
 
 `render.yaml` décrit le service (`python server.py`, contrôle de santé sur
-`/api/health`, dépendances dans `requirements-server.txt`). Variables à définir
-dans Render (la clé ne se met **que** dans Render, jamais dans le dépôt) :
+`/api/health`). Variables à définir dans Render (les clés ne se mettent **que**
+dans Render, jamais dans le dépôt) :
 
 | Variable | Valeur |
 |---|---|
-| `ANTHROPIC_API_KEY` | clé secrète, saisie dans Render |
-| `ENABLE_PUBLIC_AI` | `true` |
+| `FOOTBALL_DATA_KEY` | clé gratuite football-data.org |
+| `GROQ_API_KEY` | facultatif, clé gratuite Groq |
+| `CHAT_ENGINE` | `free` |
+| `ENABLE_PUBLIC_AI` | `false` (aucune IA payante) |
 | `ALLOWED_ORIGINS` | `https://pronoben.github.io` |
 | `TRUST_PROXY` | `true` (Render passe par Cloudflare) |
 
-Protections contre les abus et les dépenses :
-
-- 8 questions par 5 minutes et 30 par jour pour chaque visiteur (`CHAT_LIMIT_PER_5MIN`, `CHAT_LIMIT_PER_DAY`) ;
-- plafond global, tous visiteurs confondus : 150 unités par jour et 40 par heure
-  (`AI_DAILY_BUDGET`, `AI_HOURLY_BUDGET` ; 1 question = 1, 1 composition = 3) ;
-- 3 appels IA simultanés au maximum (`AI_MAX_CONCURRENT`) ;
-- questions limitées à 1 000 caractères, conversation bornée, `Origin` obligatoire ;
-- réponses identiques réutilisées pendant 10 minutes sans nouvel appel payant ;
-- recherche limitée à 5 requêtes web et 3 pages lues par question.
-
-Ces compteurs sont en mémoire et repartent à zéro à chaque redéploiement : fixer aussi
-une limite de dépense mensuelle dans la console Anthropic.
+Protections : 8 questions par 5 minutes et 30 par jour pour chaque visiteur,
+1 500 questions par jour pour tout le site, 4 traitements simultanés, questions
+limitées à 1 000 caractères, en-tête `Origin` obligatoire.
 
 Sur l'offre gratuite, Render met le service en veille après 15 minutes sans visite ;
 la première question peut alors attendre environ une minute.
 
-### Règles du chatbot
-
-- Recherche web obligatoire pour les statistiques, scores, classements, actualités,
-  compositions et transferts ; au moins deux sources recherchées.
-- Question ambiguë (« combien de buts a João Pedro ? ») : le chatbot demande d'abord
-  le joueur exact, le club, la saison et la compétition.
-- Chaque réponse vérifiée affiche la date de vérification, les sources consultées
-  (liens cliquables, numéros `[n]` dans le texte) et des sections séparées :
-  Faits vérifiés, Analyse, Prédiction, Limites.
-- Sans recherche réelle ni source HTTPS, aucune affirmation n'est affichée.
+L'ancien chatbot Claude (`chatbot_ai.py`, payant) reste disponible avec
+`CHAT_ENGINE=anthropic` et `ENABLE_PUBLIC_AI=true`.
 
 ## Accès par une IA avec MCP
 
@@ -154,10 +176,11 @@ N'ajoutez pas d'outil d'écriture sans authentification et autorisations sépar�
 | Coaching | `training-data.js`, `coach.js` |
 | Configuration publique | `config.js` (URL du backend uniquement, jamais de clé) |
 | Données des championnats | `data.js`, `leagues.js`, fichiers de championnat |
-| Assistant local et interface | `chatbot.js`, `chat-local.js`, `chat-players.js` |
+| Chatbot gratuit | `free_chat.py`, `free_sources.py`, interface `chatbot.js` |
+| Assistant local (ancien) | `chat-local.js`, `chat-players.js` |
 | Backend web | `server.py` |
 | Serveur MCP | `mcp_server.py` |
-| IA Claude | `chatbot_ai.py`, `lineups_ai.py` |
+| IA Claude (payante, désactivée par défaut) | `chatbot_ai.py`, `lineups_ai.py` |
 | Vérifications | `tests/` |
 
 ## Travailler à deux

@@ -39,6 +39,10 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 from zoneinfo import ZoneInfo
 
+import free_chat
+import free_sources
+from free_sources import QuotaExceeded, SourceUnavailable
+
 ROOT = Path(__file__).resolve().parent
 PORT = int(os.environ.get("PORT", 8765))
 API_BASE = "https://api.football-data.org/v4/competitions/"
@@ -89,6 +93,10 @@ def load_env():
 load_env()
 API_KEY = os.environ.get("FOOTBALL_DATA_KEY", "")
 AI_PUBLIC_ENABLED = os.environ.get("ENABLE_PUBLIC_AI", "false").lower() == "true"
+# « free » (par défaut) : chatbot gratuit basé sur des sources de données.
+# « anthropic » : ancien chatbot Claude (payant), seulement si ENABLE_PUBLIC_AI=true.
+CHAT_ENGINE = os.environ.get("CHAT_ENGINE", "free").strip().lower()
+PUBLIC_CHAT_ENABLED = os.environ.get("ENABLE_PUBLIC_CHAT", "true").lower() == "true"
 TRUST_PROXY = os.environ.get("TRUST_PROXY", "false").lower() == "true"
 ALLOWED_ORIGINS = {
     origin.strip().rstrip("/")
@@ -204,6 +212,13 @@ DAILY_LIMITS = {
 }
 # Coût relatif d'un appel (une composition consomme plus qu'une question).
 AI_COST_UNITS = {"/api/chat": 1, "/api/lineup": 3}
+# Chatbot gratuit : plafond global pour ne jamais dépasser les quotas gratuits
+# des fournisseurs, même avec beaucoup de visiteurs.
+FREE_CHAT_GUARD = SpendingGuard(
+    daily_units=_env_int("FREE_CHAT_PER_DAY", 1500),
+    hourly_units=_env_int("FREE_CHAT_PER_HOUR", 300),
+    max_concurrent=_env_int("FREE_CHAT_CONCURRENT", 4, maximum=20),
+)
 SPENDING = SpendingGuard(
     daily_units=_env_int("AI_DAILY_BUDGET", 150),
     hourly_units=_env_int("AI_HOURLY_BUDGET", 40),
@@ -212,17 +227,20 @@ SPENDING = SpendingGuard(
 
 
 def call_api(path, code="FL1"):
-    req = urllib.request.Request(API_BASE + code + path, headers={"X-Auth-Token": API_KEY})
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        return json.load(resp)
+    # Même cache et même quota que le chatbot gratuit : football-data.org
+    # n'autorise que 10 requêtes par minute pour toute l'application.
+    return free_sources.football_data(f"/competitions/{code}{path}")["data"]
 
 
 def fetch_league(code):
     """Récupère et simplifie les données pour le site."""
     standings_raw = call_api("/standings", code)
     today = datetime.now(PARIS).date()
+    # Même fenêtre que le chatbot (derniers résultats + prochains matchs) :
+    # une seule requête partagée au lieu de deux.
     matches_raw = call_api(
-        f"/matches?dateFrom={today.isoformat()}&dateTo={(today + timedelta(days=21)).isoformat()}", code
+        f"/matches?dateFrom={(today - timedelta(days=21)).isoformat()}"
+        f"&dateTo={(today + timedelta(days=28)).isoformat()}", code
     )
 
     table = next(s for s in standings_raw["standings"] if s["type"] == "TOTAL")["table"]
@@ -260,7 +278,7 @@ def fetch_league(code):
     # Classement des buteurs (optionnel : le site marche sans)
     players = []
     try:
-        for row in call_api("/scorers?limit=60", code).get("scorers", []):
+        for row in call_api("/scorers?limit=100", code).get("scorers", []):
             t = row.get("team") or {}
             players.append({
                 "name": row["player"]["name"],
@@ -301,12 +319,7 @@ def get_league_data(code):
 
 
 def call_global_api(path):
-    req = urllib.request.Request(
-        GLOBAL_API_BASE + path,
-        headers={"X-Auth-Token": API_KEY, "User-Agent": "FootAnalyse/1.0"},
-    )
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        return json.load(resp)
+    return free_sources.football_data(path, ttl=LIVE_CACHE_SECONDS)["data"]
 
 
 def fetch_live_matches():
@@ -578,6 +591,14 @@ class Handler(SimpleHTTPRequestHandler):
                 {
                     "status": "ok",
                     "ai": self.ai_ready(),
+                    "chat": {
+                        "engine": CHAT_ENGINE,
+                        "ready": PUBLIC_CHAT_ENABLED and (
+                            bool(free_sources.football_data_key()) if CHAT_ENGINE == "free" else self.ai_ready()
+                        ),
+                        "freeAi": free_chat.ai_available(),
+                        "quotas": free_sources.quota_status(),
+                    },
                     "footballData": bool(API_KEY),
                     "budget": SPENDING.status(),
                     "time": datetime.now(PARIS).isoformat(),
@@ -646,6 +667,41 @@ class Handler(SimpleHTTPRequestHandler):
         finally:
             SPENDING.release_slot()
 
+    def handle_free_chat(self):
+        """Chatbot gratuit : sources de données + IA gratuite facultative."""
+        if not PUBLIC_CHAT_ENABLED:
+            return self.send_json(503, {"error": "Chatbot désactivé sur ce serveur (ENABLE_PUBLIC_CHAT)."})
+        if not self.rate_limit("/api/chat"):
+            return
+        try:
+            body = self.read_json_body()
+            messages = body.get("messages")
+            if not isinstance(messages, list) or not all(isinstance(m, dict) for m in messages):
+                raise ValueError("La conversation doit être une liste de messages.")
+            free_chat._clean(messages)  # validation avant toute requête aux fournisseurs
+            if not FREE_CHAT_GUARD.acquire_slot():
+                return self.send_json(503, {"error": "Le serveur traite déjà plusieurs questions. Réessaie dans un instant."})
+            try:
+                refused = FREE_CHAT_GUARD.try_spend(1)
+                if refused:
+                    when = "demain" if refused == "daily" else "dans quelques minutes"
+                    return self.send_json(503, {
+                        "error": f"Le plafond gratuit de questions du site est atteint. Réessaie {when}.",
+                        "budget": refused,
+                    })
+                result = free_chat.answer(messages)
+            finally:
+                FREE_CHAT_GUARD.release_slot()
+        except PermissionError as e:
+            status, message = e.args
+            return self.send_json(status, {"error": message})
+        except (ValueError, json.JSONDecodeError) as e:
+            return self.send_json(400, {"error": str(e)})
+        except Exception:
+            traceback.print_exc()
+            return self.send_json(500, {"error": "Erreur interne du serveur. Réessaie plus tard."})
+        self.send_json(200, result)
+
     def do_POST(self):
         route = self.path.split("?")[0]
         if route not in ("/api/chat", "/api/lineup"):
@@ -653,6 +709,8 @@ class Handler(SimpleHTTPRequestHandler):
         # Un navigateur envoie toujours Origin sur un POST : on l'exige.
         if not self.origin_allowed(required=True):
             return self.send_json(403, {"error": "Origine non autorisée."})
+        if route == "/api/chat" and CHAT_ENGINE == "free":
+            return self.handle_free_chat()
         if not AI_PUBLIC_ENABLED:
             return self.send_json(
                 503,
@@ -728,6 +786,10 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json(503, {"error": "Clé API manquante : crée le fichier .env (voir .env.example)."})
         try:
             data = get_league_data(code)
+        except QuotaExceeded:
+            return self.send_json(503, {"error": "Quota gratuit de football-data.org atteint, réessaie dans une minute."})
+        except SourceUnavailable as e:
+            return self.send_json(502, {"error": f"Fournisseur indisponible : {e.reason}."})
         except urllib.error.HTTPError as e:
             msg = {401: "Clé API invalide.", 403: "Accès refusé par l'API.", 429: "Trop de requêtes, réessaie dans une minute."}
             return self.send_json(502, {"error": msg.get(e.code, f"Erreur API ({e.code}).")})
@@ -740,6 +802,10 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json(503, {"error": "Clé FOOTBALL_DATA_KEY manquante."})
         try:
             return self.send_json(200, get_live_data())
+        except QuotaExceeded:
+            return self.send_json(503, {"error": "Quota gratuit de football-data.org atteint, réessaie dans une minute."})
+        except SourceUnavailable as error:
+            return self.send_json(502, {"error": f"Fournisseur de scores indisponible : {error.reason}."})
         except urllib.error.HTTPError as error:
             return self.send_json(502, {"error": f"Fournisseur de scores indisponible ({error.code})."})
         except Exception:
@@ -756,7 +822,8 @@ if __name__ == "__main__":
     print(f"FootAnalyse → http://localhost:{PORT}", flush=True)
     print("Clé football-data :", "trouvée ✅" if API_KEY else "absente ❌ (le site utilisera les données enregistrées)")
     print("Clé Anthropic (chatbot) :", "trouvée ✅" if os.environ.get("ANTHROPIC_API_KEY") else "absente ❌ (chatbot en mode simple)")
-    print("IA publique :", "activée ⚠️" if AI_PUBLIC_ENABLED else "désactivée ✅")
+    print("IA publique payante :", "activée ⚠️" if AI_PUBLIC_ENABLED else "désactivée ✅")
+    print("Chatbot :", CHAT_ENGINE, "| IA gratuite :", "configurée" if free_chat.ai_available() else "non configurée")
     print("Origines autorisées :", ", ".join(sorted(ALLOWED_ORIGINS)))
     print("Plafond IA :", f"{SPENDING.daily_units}/jour, {SPENDING.hourly_units}/heure", flush=True)
     ThreadingHTTPServer.daemon_threads = True

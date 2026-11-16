@@ -27,6 +27,15 @@ la page ou la route concernée, les étapes pour reproduire et l'impact possible
   limités, validation stricte des messages et des demandes de compositions.
 - Erreurs renvoyées en JSON générique, détails techniques uniquement dans les journaux.
 
+**Chatbot gratuit (`free_chat.py`)**
+- Toute demande de clé, de mot de passe, de variable d'environnement ou d'instruction
+  interne est refusée avant tout traitement ; les réponses passent par un filtre qui
+  masque toute valeur ressemblant à une clé.
+- L'IA gratuite ne voit jamais de clé ni la question brute au moment de rédiger :
+  elle reçoit uniquement les faits, et sa phrase est rejetée si elle contient un
+  nombre absent des données.
+- Quotas des fournisseurs gérés côté serveur : au-delà, aucun appel n'est fait.
+
 **Dépôt**
 - `.env` ignoré par Git ; clés uniquement dans les variables d'environnement de l'hébergeur.
 - Tests automatiques à chaque modification (`.github/workflows/tests.yml`).

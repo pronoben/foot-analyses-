@@ -27,6 +27,7 @@ class BackendHTTPTests(unittest.TestCase):
         chatbot_ai._cache.clear()
         self.patches = [
             patch.object(server, "AI_PUBLIC_ENABLED", True),
+            patch.object(server, "CHAT_ENGINE", "anthropic"),
             patch.object(server, "TRUST_PROXY", True),
             patch.object(server, "ALLOWED_ORIGINS", {ORIGIN}),
             patch.object(server, "API_KEY", ""),
