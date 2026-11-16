@@ -219,6 +219,21 @@ footer { text-align: center; color: var(--muted); font-size: 0.85rem; padding: 2
 .msg .sources { margin-top: 10px; padding-top: 8px; border-top: 1px solid #35414e; font-size: .75rem; color: var(--muted); display: flex; flex-direction: column; gap: 5px; }
 .msg .sources a { color: var(--accent); overflow-wrap: anywhere; }
 .chat-panel { width: 380px; height: 520px; }
+/* Réponses vérifiées : faits, analyse et prédiction bien séparés */
+.verification-badge.clarification { color: var(--accent-2); }
+.verification-badge.no_research { color: var(--muted); }
+.verification-badge .single-source { color: var(--warn); }
+.msg .section-title { display: block; margin: 10px 0 4px; padding-left: 8px; border-left: 3px solid var(--muted); font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; }
+.msg .section-title.facts { border-color: var(--accent); color: var(--accent); }
+.msg .section-title.analysis { border-color: var(--accent-2); color: #93c5fd; }
+.msg .section-title.prediction { border-color: #a855f7; color: #d8b4fe; }
+.msg .section-title.limits { border-color: var(--warn); color: var(--warn); }
+.msg a { color: var(--accent); }
+.msg sup.cite { font-size: .68rem; margin-left: 1px; }
+.msg sup.cite a { text-decoration: none; padding: 0 2px; border-radius: 3px; background: rgba(34,197,94,.15); }
+@media (max-width: 480px) {
+  .chat-panel { width: calc(100vw - 24px); right: 12px; height: 75vh; }
+}
 
 /* ---------- Compositions probables ---------- */
 h3 { font-size: 0.95rem; margin: 12px 0 6px; }

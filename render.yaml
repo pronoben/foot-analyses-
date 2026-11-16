@@ -1,0 +1,36 @@
+# Déploiement du backend FootAnalyse sur Render (Blueprint).
+# La clé ANTHROPIC_API_KEY n'est JAMAIS écrite ici : Render la demande
+# au moment de la création (sync: false) et la garde chiffrée.
+services:
+  - type: web
+    name: foot-analyses-api
+    runtime: python
+    plan: free
+    region: frankfurt
+    branch: main
+    buildCommand: pip install -r requirements-server.txt
+    startCommand: python server.py
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ENABLE_PUBLIC_AI
+        value: "true"
+      - key: ALLOWED_ORIGINS
+        value: https://pronoben.github.io
+      # Render place Cloudflare et son proxy devant le serveur : nécessaire
+      # pour lire la vraie adresse des visiteurs (limites par visiteur).
+      - key: TRUST_PROXY
+        value: "true"
+      # Plafonds de dépense (unités : 1 question = 1, 1 composition = 3).
+      - key: AI_DAILY_BUDGET
+        value: "150"
+      - key: AI_HOURLY_BUDGET
+        value: "40"
+      - key: AI_MAX_CONCURRENT
+        value: "3"
+      - key: CHAT_LIMIT_PER_5MIN
+        value: "8"
+      - key: CHAT_LIMIT_PER_DAY
+        value: "30"

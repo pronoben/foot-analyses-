@@ -24,8 +24,10 @@ Le chatbot a besoin du SDK Anthropic : pip install -r requirements.txt
 
 import json
 import os
+import sys
 import threading
 import time
+import traceback
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -105,8 +107,18 @@ _live_cache = {"time": 0.0, "data": None}
 _news_cache = {"time": 0.0, "data": None}
 
 
+def _env_int(name, default, minimum=1, maximum=100_000):
+    try:
+        value = int(os.environ.get(name, default))
+    except ValueError:
+        value = default
+    return max(minimum, min(maximum, value))
+
+
 class RateLimiter:
     """Limiteur simple en mémoire, adapté à un petit déploiement mono-processus."""
+
+    MAX_KEYS = 20_000
 
     def __init__(self):
         self._events = defaultdict(deque)
@@ -115,6 +127,10 @@ class RateLimiter:
     def allow(self, key, limit, period_seconds):
         now = time.time()
         with self._lock:
+            if len(self._events) > self.MAX_KEYS:
+                # Nettoyage : on oublie les clés sans activité depuis 24 h.
+                for old_key in [k for k, v in self._events.items() if not v or v[-1] < now - 86_400]:
+                    del self._events[old_key]
             events = self._events[key]
             while events and events[0] <= now - period_seconds:
                 events.popleft()
@@ -124,14 +140,74 @@ class RateLimiter:
             return True
 
 
+class SpendingGuard:
+    """Plafond global des appels IA payants, tous visiteurs confondus.
+
+    Protège contre les dépenses incontrôlées même si les limites par IP sont
+    contournées (nombreuses adresses). Remis à zéro chaque jour (heure de Paris).
+    Le compteur est en mémoire : un redéploiement le remet à zéro, d'où
+    l'intérêt de fixer aussi une limite mensuelle dans la console Anthropic.
+    """
+
+    def __init__(self, daily_units, hourly_units, max_concurrent):
+        self.daily_units = daily_units
+        self.hourly_units = hourly_units
+        self._day = None
+        self._spent_today = 0
+        self._hour_events = deque()
+        self._lock = threading.Lock()
+        self._slots = threading.BoundedSemaphore(max_concurrent)
+
+    def try_spend(self, units):
+        now = time.time()
+        today = datetime.now(PARIS).date()
+        with self._lock:
+            if self._day != today:
+                self._day, self._spent_today = today, 0
+            while self._hour_events and self._hour_events[0][0] <= now - 3600:
+                self._hour_events.popleft()
+            spent_hour = sum(u for _, u in self._hour_events)
+            if self._spent_today + units > self.daily_units:
+                return "daily"
+            if spent_hour + units > self.hourly_units:
+                return "hourly"
+            self._spent_today += units
+            self._hour_events.append((now, units))
+            return None
+
+    def acquire_slot(self):
+        return self._slots.acquire(blocking=False)
+
+    def release_slot(self):
+        self._slots.release()
+
+    def status(self):
+        with self._lock:
+            spent = self._spent_today if self._day == datetime.now(PARIS).date() else 0
+            return {"dailyLimit": self.daily_units, "remainingToday": max(0, self.daily_units - spent)}
+
+
 RATE_LIMITER = RateLimiter()
 RATE_LIMITS = {
+    "/api/health": (60, 60),
     "/api/league": (60, 60),
     "/api/live": (120, 60),
     "/api/news": (30, 60),
-    "/api/chat": (10, 300),
-    "/api/lineup": (4, 600),
+    "/api/chat": (_env_int("CHAT_LIMIT_PER_5MIN", 8), 300),
+    "/api/lineup": (3, 600),
 }
+# Limites quotidiennes par visiteur pour les routes payantes.
+DAILY_LIMITS = {
+    "/api/chat": (_env_int("CHAT_LIMIT_PER_DAY", 30), 86_400),
+    "/api/lineup": (10, 86_400),
+}
+# Coût relatif d'un appel (une composition consomme plus qu'une question).
+AI_COST_UNITS = {"/api/chat": 1, "/api/lineup": 3}
+SPENDING = SpendingGuard(
+    daily_units=_env_int("AI_DAILY_BUDGET", 150),
+    hourly_units=_env_int("AI_HOURLY_BUDGET", 40),
+    max_concurrent=_env_int("AI_MAX_CONCURRENT", 3, maximum=20),
+)
 
 
 def call_api(path, code="FL1"):
@@ -363,6 +439,7 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
 
@@ -383,25 +460,50 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_header("Vary", "Origin")
         super().end_headers()
 
-    def client_key(self, route):
-        forwarded = ""
+    def client_ip(self):
+        """Adresse du visiteur.
+
+        Derrière Render (Cloudflare puis le proxy Render), l'adresse TCP est celle
+        du proxy. Cloudflare écrit l'adresse réelle dans CF-Connecting-IP et
+        remplace toute valeur envoyée par le client. Le premier élément de
+        X-Forwarded-For, lui, peut être falsifié : on prend l'avant-dernier,
+        ajouté par Cloudflare, en dernier recours.
+        """
         if TRUST_PROXY:
-            forwarded = self.headers.get("X-Forwarded-For", "").split(",", 1)[0].strip()
-        address = forwarded or self.client_address[0]
-        return address, route
+            for header in ("CF-Connecting-IP", "True-Client-IP"):
+                value = self.headers.get(header, "").strip()
+                if value and len(value) <= 64:
+                    return value
+            hops = [h.strip() for h in self.headers.get("X-Forwarded-For", "").split(",") if h.strip()]
+            if len(hops) >= 2:
+                return hops[-2][:64]
+            if hops:
+                return hops[-1][:64]
+        return self.client_address[0]
+
+    def client_key(self, route):
+        return self.client_ip(), route
 
     def rate_limit(self, route):
         limit = RATE_LIMITS.get(route)
         if not limit:
             return True
         allowed = RATE_LIMITER.allow(self.client_key(route), *limit)
+        daily = DAILY_LIMITS.get(route)
+        if allowed and daily:
+            allowed = RATE_LIMITER.allow((self.client_ip(), route, "jour"), *daily)
+            if not allowed:
+                self.send_json(429, {"error": "Limite quotidienne de questions atteinte pour aujourd'hui. Reviens demain."})
+                return False
         if not allowed:
-            self.send_json(429, {"error": "Trop de requêtes. Réessaie dans quelques instants."})
+            self.send_json(429, {"error": "Trop de requêtes. Réessaie dans quelques minutes."})
         return allowed
 
-    def origin_allowed(self):
+    def origin_allowed(self, required=False):
         origin = self.headers.get("Origin", "").rstrip("/")
-        return not origin or origin in ALLOWED_ORIGINS
+        if not origin:
+            return not required
+        return origin in ALLOWED_ORIGINS
 
     def do_OPTIONS(self):
         if not self.origin_allowed():
@@ -412,8 +514,31 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Access-Control-Max-Age", "600")
         self.end_headers()
 
+    def ai_ready(self):
+        if not (AI_PUBLIC_ENABLED and os.environ.get("ANTHROPIC_API_KEY")):
+            return False
+        try:
+            import anthropic  # noqa: F401
+        except ImportError:
+            return False
+        return True
+
     def do_GET(self):
         route = self.path.split("?")[0]
+        if route == "/api/health":
+            if not self.rate_limit(route):
+                return
+            # Aucune information secrète : uniquement l'état des services.
+            return self.send_json(
+                200,
+                {
+                    "status": "ok",
+                    "ai": self.ai_ready(),
+                    "footballData": bool(API_KEY),
+                    "budget": SPENDING.status(),
+                    "time": datetime.now(PARIS).isoformat(),
+                },
+            )
         if route == "/api/league":
             if not self.rate_limit(route):
                 return
@@ -435,36 +560,63 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_error(404)
         return super().do_GET()
 
+    MAX_BODY_BYTES = 32_000
+
+    def read_json_body(self):
+        if "application/json" not in self.headers.get("Content-Type", ""):
+            raise PermissionError(415, "Content-Type application/json obligatoire.")
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except ValueError:
+            raise PermissionError(400, "Longueur de requête invalide.")
+        if length <= 0 or length > self.MAX_BODY_BYTES:
+            raise PermissionError(413, "Message trop long.")
+        body = json.loads(self.rfile.read(length) or b"{}")
+        if not isinstance(body, dict):
+            raise ValueError("Le corps JSON doit être un objet.")
+        return body
+
+    def run_paid_ai(self, route, call):
+        """Exécute un appel IA payant si le plafond global le permet."""
+        if not SPENDING.acquire_slot():
+            self.send_json(503, {"error": "Le serveur traite déjà plusieurs questions. Réessaie dans une minute."})
+            return None
+        try:
+            refused = SPENDING.try_spend(AI_COST_UNITS[route])
+            if refused == "daily":
+                self.send_json(503, {"error": "Le plafond quotidien de recherches du site est atteint. Réessaie demain.", "budget": "daily"})
+                return None
+            if refused == "hourly":
+                self.send_json(503, {"error": "Beaucoup de questions en ce moment : réessaie dans quelques minutes.", "budget": "hourly"})
+                return None
+            return call()
+        finally:
+            SPENDING.release_slot()
+
     def do_POST(self):
         route = self.path.split("?")[0]
         if route not in ("/api/chat", "/api/lineup"):
             return self.send_error(404)
-        if not self.origin_allowed():
+        # Un navigateur envoie toujours Origin sur un POST : on l'exige.
+        if not self.origin_allowed(required=True):
             return self.send_json(403, {"error": "Origine non autorisée."})
-        if not self.rate_limit(route):
-            return
         if not AI_PUBLIC_ENABLED:
             return self.send_json(
                 503,
-                {"error": "Fonctions IA publiques désactivées tant que l'authentification n'est pas configurée."},
+                {"error": "Fonctions IA publiques désactivées sur ce serveur (ENABLE_PUBLIC_AI)."},
             )
         if not os.environ.get("ANTHROPIC_API_KEY"):
-            return self.send_json(503, {"error": "Clé ANTHROPIC_API_KEY manquante dans .env."})
+            return self.send_json(503, {"error": "Clé ANTHROPIC_API_KEY absente de la configuration du serveur."})
         try:
             import anthropic
             import chatbot_ai
             import lineups_ai
         except ImportError:
             return self.send_json(503, {"error": "SDK Anthropic non installé : pip install -r requirements.txt"})
+        if not self.rate_limit(route):
+            return
         try:
-            if "application/json" not in self.headers.get("Content-Type", ""):
-                return self.send_json(415, {"error": "Content-Type application/json obligatoire."})
-            length = int(self.headers.get("Content-Length", 0))
-            if length <= 0 or length > 64_000:
-                return self.send_json(413, {"error": "Message trop long."})
-            body = json.loads(self.rfile.read(length) or b"{}")
-            if not isinstance(body, dict):
-                raise ValueError("Le corps JSON doit être un objet.")
+            body = self.read_json_body()
             if route == "/api/chat":
                 code = str(body.get("league") or "FL1").upper()
                 if code not in LEAGUE_CODES:
@@ -474,18 +626,30 @@ class Handler(SimpleHTTPRequestHandler):
                     isinstance(message, dict) for message in messages
                 ):
                     raise ValueError("La conversation doit être une liste de messages.")
+                chatbot_ai._clean_history(messages)  # validation avant toute dépense
                 trusted_context = ""
                 if API_KEY:
-                    trusted_context = json.dumps(
-                        get_league_data(code), ensure_ascii=False, separators=(",", ":")
-                    )
-                result = chatbot_ai.answer(messages, trusted_context)
+                    try:
+                        trusted_context = json.dumps(
+                            get_league_data(code), ensure_ascii=False, separators=(",", ":")
+                        )
+                    except Exception:
+                        trusted_context = ""
+                cached = chatbot_ai.get_cached(messages, trusted_context)
+                if cached:
+                    return self.send_json(200, {**cached, "cached": True})
+                result = self.run_paid_ai(route, lambda: chatbot_ai.answer(messages, trusted_context))
             else:
                 fields = [str(body.get(k, ""))[:80] for k in ("id", "home", "away", "date")]
                 if not all(fields):
                     raise ValueError("Champs id, home, away et date obligatoires.")
                 league = str(body.get("league") or "Ligue 1")[:40]
-                result = lineups_ai.get_lineups(*fields, league=league)
+                result = self.run_paid_ai(route, lambda: lineups_ai.get_lineups(*fields, league=league))
+            if result is None:
+                return  # refus déjà envoyé (plafond ou serveur occupé)
+        except PermissionError as e:
+            status, message = e.args
+            return self.send_json(status, {"error": message})
         except (ValueError, json.JSONDecodeError) as e:
             return self.send_json(400, {"error": str(e)})
         except anthropic.AuthenticationError:
@@ -493,11 +657,17 @@ class Handler(SimpleHTTPRequestHandler):
         except anthropic.RateLimitError:
             return self.send_json(429, {"error": "Trop de questions d'un coup, réessaie dans quelques secondes."})
         except anthropic.APIStatusError as e:
+            print(f"[api] Erreur API Claude {e.status_code} : {str(e)[:300]}", file=sys.stderr)
             return self.send_json(502, {"error": f"Erreur de l'API Claude ({e.status_code})."})
         except anthropic.APIConnectionError:
             return self.send_json(502, {"error": "Impossible de joindre l'API Claude (connexion internet ?)."})
         except RuntimeError as e:
             return self.send_json(502, {"error": str(e)})
+        except Exception:
+            # Toujours une réponse JSON (avec CORS) : le site affiche l'erreur
+            # au lieu de croire que le serveur n'existe pas.
+            traceback.print_exc()
+            return self.send_json(500, {"error": "Erreur interne du serveur. Réessaie plus tard."})
         self.send_json(200, result)
 
     def api_league(self, code):
@@ -532,8 +702,11 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    print(f"FootAnalyse → http://localhost:{PORT}")
+    print(f"FootAnalyse → http://localhost:{PORT}", flush=True)
     print("Clé football-data :", "trouvée ✅" if API_KEY else "absente ❌ (le site utilisera les données enregistrées)")
     print("Clé Anthropic (chatbot) :", "trouvée ✅" if os.environ.get("ANTHROPIC_API_KEY") else "absente ❌ (chatbot en mode simple)")
     print("IA publique :", "activée ⚠️" if AI_PUBLIC_ENABLED else "désactivée ✅")
+    print("Origines autorisées :", ", ".join(sorted(ALLOWED_ORIGINS)))
+    print("Plafond IA :", f"{SPENDING.daily_units}/jour, {SPENDING.hourly_units}/heure", flush=True)
+    ThreadingHTTPServer.daemon_threads = True
     ThreadingHTTPServer(("", PORT), Handler).serve_forever()
