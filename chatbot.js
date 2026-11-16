@@ -42,8 +42,9 @@ const Chatbot = (() => {
     try {
       const res = await footApiFetch("/api/health");
       const data = await res.json().catch(() => ({}));
-      if (res.ok && data.ai) setStatus("Recherche web vérifiée · connectée");
-      else if (res.ok) setStatus("Serveur joint, mais IA désactivée", true);
+      const ready = data.chat ? data.chat.ready : data.ai;
+      if (res.ok && ready) setStatus("Données vérifiées · connecté");
+      else if (res.ok) setStatus("Serveur joint, mais sources non configurées", true);
       else setStatus(`Serveur indisponible (${res.status})`, true);
     } catch {
       healthChecked = false; // on réessaiera à la prochaine ouverture
@@ -69,6 +70,7 @@ const Chatbot = (() => {
     [/analyse/i, "analysis"],
     [/pr[ée]diction|pronostic/i, "prediction"],
     [/limite|d[ée]saccord/i, "limits"],
+    [/comparaison/i, "compare"],
   ];
 
   // Mise en forme minimale et sûre : on échappe le HTML puis on gère
@@ -117,17 +119,22 @@ const Chatbot = (() => {
       const when = research.verifiedAt ? new Date(research.verifiedAt) : new Date();
       const day = when.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
       const hour = when.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
-      badge.textContent = `✓ Vérifié le ${day} à ${hour} · ${sourceCount} source${sourceCount > 1 ? "s" : ""} consultée${sourceCount > 1 ? "s" : ""}`;
-      if (research.singleSource) {
-        const warn = document.createElement("span");
-        warn.className = "single-source";
-        warn.textContent = " · ⚠ un seul site trouvé : à confirmer";
-        badge.append(warn);
+      badge.textContent = `✓ Vérifié le ${day} à ${hour} · ${sourceCount} source${sourceCount > 1 ? "s" : ""}`;
+      const note = document.createElement("span");
+      note.className = "single-source";
+      if (research.conflict) note.textContent = " · ⚠ sources en désaccord (voir Comparaison)";
+      else if (research.singleSource) note.textContent = " · un seul fournisseur, pas de comparaison possible";
+      else if (research.independentDomains > 1) {
+        note.className = "";
+        note.textContent = ` · recoupé par ${research.independentDomains} fournisseurs`;
       }
+      if (note.textContent) badge.append(note);
     } else if (research.status === "clarification") {
       badge.textContent = "? Précisions nécessaires avant la recherche";
     } else if (research.status === "no_research") {
-      badge.textContent = "ℹ Réponse sans recherche web : aucune donnée factuelle";
+      badge.textContent = "ℹ Réponse sans recherche : aucune donnée factuelle";
+    } else if (research.status === "refused") {
+      badge.textContent = "⛔ Demande refusée";
     } else {
       badge.textContent = "Non vérifié — aucune réponse factuelle fournie";
     }
@@ -154,7 +161,7 @@ const Chatbot = (() => {
           a.target = "_blank";
           a.rel = "noopener noreferrer";
           const title = s.title.length > 70 ? s.title.slice(0, 70) + "…" : s.title;
-          a.textContent = `${i + 1}. ${title} — ${s.domain}${s.pageAge ? ` · ${s.pageAge}` : ""}`;
+          a.textContent = `${i + 1}. ${title}${s.pageAge ? ` · ${s.pageAge}` : ""}`;
           src.append(a);
         });
         div.append(src);
@@ -203,7 +210,7 @@ const Chatbot = (() => {
     }
 
     const typing = addMessage("…", "bot typing");
-    typing.textContent = "Je recherche et je vérifie les sources (jusqu'à une minute)";
+    typing.textContent = "Je consulte et je compare les sources";
     input.disabled = sendBtn.disabled = true;
     try {
       const { reply, sources, research } = await askAI();
@@ -241,12 +248,12 @@ const Chatbot = (() => {
 
   // Suggestions de questions (cliquables)
   const SUGGESTIONS = [
-    "Analyse les matchs de Ligue 1 du week-end avec les absents confirmés",
-    "Quel est le classement actuel de Premier League ?",
-    "Compare la forme récente du PSG et de Marseille",
-    "Quelles compositions sont officiellement confirmées aujourd'hui ?",
-    "Quels transferts ont été officialisés cette semaine ?",
-    "Explique le modèle de pronostic et ses limites",
+    "Classement de la Ligue 1",
+    "Meilleurs buteurs de Premier League",
+    "Quelle place pour l'OM ?",
+    "Prochain match du PSG",
+    "Dernier résultat du Bayern",
+    "Combien de buts a João Pedro ?",
   ];
   const sugBox = document.getElementById("chat-suggestions");
   SUGGESTIONS.forEach(text => {
