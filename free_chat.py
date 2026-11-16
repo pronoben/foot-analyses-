@@ -622,7 +622,12 @@ def answer_top_scorers(q):
     if not q.league:
         return clarification(["Pour quel championnat (Ligue 1, Premier League, Liga, Serie A, Bundesliga) ?"],
                              "le championnat n'est pas précisé.")
-    entry = src.fd_scorers(q.league)
+    try:
+        entry = src.fd_scorers(q.league)
+    except SourceUnavailable as error:
+        if q.league == "BL1":
+            return bundesliga_scorers_from_openliga()
+        return scorers_not_available(error)
     scorers = (entry["data"] or {}).get("scorers") or []
     if not scorers:
         return simple("unavailable", "football-data.org ne fournit pas encore de buteurs pour ce championnat. "
@@ -639,6 +644,28 @@ def answer_top_scorers(q):
         comparison, conflict = compare_openliga_scorers(top, ans)
     return ans.result(short, facts, comparison, [f"Saison {src.season_label()}, championnat uniquement."],
                       conflict=conflict)
+
+
+def scorers_not_available(error):
+    return simple("unavailable",
+                  f"Les statistiques de buteurs ne sont pas accessibles avec la clé gratuite actuelle "
+                  f"({error.provider} : {error.reason}). Je ne peux donc pas vérifier ce chiffre et je "
+                  "n'en donne pas. Classements et matchs restent disponibles.")
+
+
+def bundesliga_scorers_from_openliga():
+    """Repli Bundesliga : OpenLigaDB (gratuit, sans clé) comme source unique."""
+    entry, source = src.openliga("getgoalgetters")
+    goals = [g for g in entry["data"] or [] if isinstance(g.get("goalCount"), int)][:5]
+    if not goals:
+        return simple("unavailable", "OpenLigaDB ne fournit pas encore de buteurs pour la Bundesliga.")
+    ans = Answer()
+    n = ans.cite(source)
+    facts = [f"{g['goalGetterName']} — {g['goalCount']} buts [{n}]" for g in goals]
+    short = f"{goals[0]['goalGetterName']} est le meilleur buteur de Bundesliga avec {goals[0]['goalCount']} buts."
+    return ans.result(short, facts, ["Une seule source gratuite disponible pour les buteurs (OpenLigaDB)."],
+                      [f"Saison {src.season_label()}, championnat uniquement.",
+                       "OpenLigaDB ne précise pas le club des buteurs."])
 
 
 def compare_openliga_scorers(players, ans):
@@ -702,7 +729,10 @@ def answer_goals(q):
     not_found = []
     for comp in competitions:
         comp_name = LEAGUES.get(comp, {}).get("name") or "Ligue des champions"
-        entry = src.fd_scorers(comp)
+        try:
+            entry = src.fd_scorers(comp)
+        except SourceUnavailable as error:
+            return scorers_not_available(error)
         n = ans.cite(src.fd_source(entry, f"buteurs {comp_name}"))
         matches = [p for p in (entry["data"] or {}).get("scorers") or []
                    if name_matches(player, p["player"]) and same_team(p["team"], row["team"])]
