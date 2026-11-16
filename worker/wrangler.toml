@@ -1,0 +1,31 @@
+# Worker Cloudflare du chatbot FootAnalyse — offre gratuite uniquement.
+# Aucune clé ici : les secrets se saisissent dans le tableau de bord Cloudflare
+# (ou avec `wrangler secret put NOM`), jamais dans le dépôt.
+name = "foot-analyses-chat"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+workers_dev = true
+
+# Workers AI : allocation gratuite (10 000 neurons par jour). Au-delà, les
+# appels échouent et le chatbot répond sans reformulation : jamais de facturation.
+[ai]
+binding = "AI"
+
+# D1 (gratuit) : cache partagé, limites par visiteur et quotas des fournisseurs.
+# Créer la base avec `wrangler d1 create foot-analyses-chat` puis copier son id ici.
+[[d1_databases]]
+binding = "DB"
+database_name = "foot-analyses-chat"
+database_id = "A_REMPLACER_PAR_L_ID_DE_LA_BASE"
+
+[vars]
+ALLOWED_ORIGINS = "https://pronoben.github.io,http://localhost:8765,http://127.0.0.1:8765,http://localhost:8787"
+QUESTIONS_PER_HOUR = "10"
+QUESTIONS_PER_DAY = "2000"
+AI_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+AI_DAILY_CALLS = "150"
+
+# Secrets à créer (valeurs saisies uniquement dans Cloudflare) :
+#   FOOTBALL_DATA_KEY      clé gratuite football-data.org
+#   TURNSTILE_SECRET_KEY   clé secrète du widget Turnstile
+#   API_FOOTBALL_KEY       facultatif : clé gratuite API-Football

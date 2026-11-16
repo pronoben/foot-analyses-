@@ -1,10 +1,12 @@
 /* =========================================================
    CHATBOT – interface
    ---------------------------------------------------------
-   Envoie la conversation au serveur (/api/chat), qui interroge
-   Claude avec recherche web (voir chatbot_ai.py).
-   Si le serveur de recherche n'est pas disponible, le chatbot
-   refuse de répondre plutôt que d'utiliser des données anciennes.
+   Envoie la conversation au Worker Cloudflare (/api/chat) avec un
+   jeton anti-robot Turnstile. Le Worker consulte des sources de
+   données gratuites, compare les résultats et renvoie une réponse
+   vérifiable : faits reliés à leurs sources, date de vérification,
+   avertissements. Sans source, aucune valeur n'est affichée.
+   Compatible aussi avec l'ancien serveur Python (server.py).
    ========================================================= */
 
 const Chatbot = (() => {
@@ -14,41 +16,43 @@ const Chatbot = (() => {
   const input = document.getElementById("chat-input");
   const sendBtn = form.querySelector("button");
   const serviceStatus = document.getElementById("chat-service-status");
+  const turnstileBox = document.getElementById("chat-turnstile");
+  const config = window.FOOTANALYSE_CONFIG || {};
   const history = []; // { role: "user" | "assistant", content }
-  const configuredBackend = Boolean(window.FOOTANALYSE_CONFIG?.apiBase);
+  const configuredBackend = Boolean(config.apiBase);
   const staticGitHubPage = location.hostname.endsWith("github.io");
   let aiAvailable = configuredBackend || !staticGitHubPage;
   let healthChecked = false;
-  const MAX_QUESTION_CHARS = 1000;
-  const CHAT_TIMEOUT_MS = 170000;
+  const MAX_QUESTION_CHARS = 500;
+  const CHAT_TIMEOUT_MS = 60000;
 
   input.maxLength = MAX_QUESTION_CHARS;
 
   const unavailableText = () =>
-    "La recherche web vérifiée n'est pas connectée à cette version du site. " +
-    "Je préfère ne pas répondre plutôt que d'utiliser les données enregistrées ou d'inventer. " +
-    "Le serveur IA sécurisé doit être déployé et relié au site.";
+    "Le service de vérification n'est pas connecté à cette version du site. " +
+    "Je préfère ne pas répondre plutôt que d'utiliser des données anciennes ou d'inventer.";
 
   function setStatus(text, offline = false) {
     serviceStatus.textContent = text;
     serviceStatus.classList.toggle("offline", offline);
   }
 
-  // Réveille le serveur (hébergement gratuit en veille) et affiche son état.
   async function checkHealth() {
     if (healthChecked || !configuredBackend) return;
     healthChecked = true;
-    setStatus("Connexion au serveur de recherche…");
+    setStatus("Connexion au service de vérification…");
     try {
       const res = await footApiFetch("/api/health");
       const data = await res.json().catch(() => ({}));
-      const ready = data.chat ? data.chat.ready : data.ai;
+      const ready = data.engine === "cloudflare-worker"
+        ? data.storage && data.turnstile
+        : (data.chat ? data.chat.ready : data.ai);
       if (res.ok && ready) setStatus("Données vérifiées · connecté");
-      else if (res.ok) setStatus("Serveur joint, mais sources non configurées", true);
-      else setStatus(`Serveur indisponible (${res.status})`, true);
+      else if (res.ok) setStatus("Service joint, configuration incomplète", true);
+      else setStatus(`Service indisponible (${res.status})`, true);
     } catch {
-      healthChecked = false; // on réessaiera à la prochaine ouverture
-      setStatus("Serveur injoignable pour le moment", true);
+      healthChecked = false;
+      setStatus("Service injoignable pour le moment", true);
     }
   }
 
@@ -62,132 +66,178 @@ const Chatbot = (() => {
     }
   }
 
+  // ---------------------------------------------------------- Turnstile
+  let widgetId = null;
+  let pending = null;
+
+  function turnstileToken() {
+    if (!config.turnstileSiteKey) return Promise.resolve("");
+    return new Promise((resolve, reject) => {
+      const deadline = Date.now() + 15000;
+      const start = () => {
+        if (!window.turnstile) {
+          if (Date.now() > deadline) return reject(new Error("la vérification anti-robot n'a pas pu se charger"));
+          return setTimeout(start, 200);
+        }
+        pending = { resolve, reject };
+        if (widgetId === null) {
+          widgetId = window.turnstile.render(turnstileBox, {
+            sitekey: config.turnstileSiteKey,
+            execution: "execute",
+            appearance: "interaction-only",
+            language: "fr",
+            callback: token => { pending?.resolve(token); pending = null; },
+            "error-callback": () => { pending?.reject(new Error("vérification anti-robot échouée")); pending = null; },
+            "expired-callback": () => window.turnstile.reset(widgetId),
+          });
+        } else {
+          window.turnstile.reset(widgetId);
+        }
+        window.turnstile.execute(widgetId);
+      };
+      start();
+    });
+  }
+
+  // ---------------------------------------------------------- affichage
   const escapeHtml = value => String(value ?? "")
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-  const SECTION_CLASSES = [
-    [/faits/i, "facts"],
-    [/analyse/i, "analysis"],
-    [/pr[ée]diction|pronostic/i, "prediction"],
-    [/limite|d[ée]saccord/i, "limits"],
-    [/comparaison/i, "compare"],
-  ];
+  const fmt = iso => {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    return `${d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" })} à ${d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`;
+  };
 
-  // Mise en forme minimale et sûre : on échappe le HTML puis on gère
-  // **gras**, *italique*, titres de section, listes « - », liens HTTPS,
-  // renvois [n] vers les sources et retours à la ligne.
-  function formatText(text, sources = []) {
-    return escapeHtml(text)
-      .replace(/^\s*[-•*]\s+/gm, "• ")
-      .replace(/^#{1,6}\s*(.+)$/gm, (_, title) => {
-        const match = SECTION_CLASSES.find(([re]) => re.test(title));
-        return `<strong class="section-title ${match ? match[1] : ""}">${title.replace(/\*\*/g, "")}</strong>\u0001`;
-      })
-      .replace(/\u0001\n?/g, "")
-      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-      .replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>")
-      .replace(/(^|\s)_([^_\n]+)_(?=\s|$|[.,;:!?])/g, "$1<em>$2</em>")
-      .replace(/\[([^\]\n]{1,200})\]\((https:\/\/[^\s)"]{1,500})\)/g,
-        '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
-      .replace(/\[(\d{1,2})\](?!\()/g, (whole, n) => {
-        const source = sources[Number(n) - 1];
-        if (!source) return whole;
-        return `<sup class="cite"><a href="${escapeHtml(source.url)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(source.title)}">${n}</a></sup>`;
-      })
-      .replace(/\n/g, "<br>");
-  }
+  const safeUrl = value => {
+    try {
+      const url = new URL(String(value || ""));
+      return url.protocol === "https:" ? url.href : null;
+    } catch { return null; }
+  };
 
-  function safeSourceList(sources) {
-    return (Array.isArray(sources) ? sources : []).map(source => {
-      try {
-        const url = new URL(String(source.url || ""));
-        if (url.protocol !== "https:") return null;
-        return {
-          url: url.href,
-          title: String(source.title || url.hostname),
-          domain: url.hostname,
-          pageAge: source.pageAge ? String(source.pageAge).slice(0, 60) : "",
-        };
-      } catch { return null; }
-    }).filter(Boolean);
-  }
+  const el = (tag, className, text) => {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  };
 
-  function badgeFor(research, sourceCount) {
-    const badge = document.createElement("div");
-    badge.className = `verification-badge ${research.status}`;
-    if (research.status === "verified") {
-      const when = research.verifiedAt ? new Date(research.verifiedAt) : new Date();
-      const day = when.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
-      const hour = when.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
-      badge.textContent = `✓ Vérifié le ${day} à ${hour} · ${sourceCount} source${sourceCount > 1 ? "s" : ""}`;
-      const note = document.createElement("span");
-      note.className = "single-source";
-      if (research.conflict) note.textContent = " · ⚠ sources en désaccord (voir Comparaison)";
-      else if (research.singleSource) note.textContent = " · un seul fournisseur, pas de comparaison possible";
-      else if (research.independentDomains > 1) {
-        note.className = "";
-        note.textContent = ` · recoupé par ${research.independentDomains} fournisseurs`;
-      }
-      if (note.textContent) badge.append(note);
-    } else if (research.status === "clarification") {
-      badge.textContent = "? Précisions nécessaires avant la recherche";
-    } else if (research.status === "no_research") {
-      badge.textContent = "ℹ Réponse sans recherche : aucune donnée factuelle";
-    } else if (research.status === "refused") {
-      badge.textContent = "⛔ Demande refusée";
+  const STATUS_BADGES = {
+    clarification: "? Précisions nécessaires avant de chercher",
+    unverifiable: "Non confirmé — aucune valeur donnée",
+    refused: "⛔ Demande refusée",
+    quota: "⏳ Quota gratuit atteint",
+    not_supported: "ℹ Hors du périmètre de cette version",
+    error: "Erreur",
+  };
+  const LEVEL_CLASS = { multiple: "level-multiple", single: "level-single", conflict: "level-conflict" };
+
+  /** Réponse au format du Worker : statut, réponse, faits ↔ sources, avertissements. */
+  function renderStructured(data) {
+    const div = el("div", "msg bot");
+    const status = data.status || "error";
+    if (status === "verified") {
+      div.append(el("div", "verification-badge verified", `✓ Réponse vérifiée · Vérifié le ${fmt(data.verifiedAt)}`));
+      const level = data.verification?.level;
+      if (level) div.append(el("div", `verification-level ${LEVEL_CLASS[level] || ""}`, data.verification.label));
     } else {
-      badge.textContent = "Non vérifié — aucune réponse factuelle fournie";
+      div.append(el("div", `verification-badge ${status}`, STATUS_BADGES[status] || "Non vérifié"));
     }
-    return badge;
-  }
+    div.append(el("p", "answer", data.answer || ""));
 
-  function addMessage(text, from, sources = [], research = null) {
-    const div = document.createElement("div");
-    div.className = `msg ${from}`;
-    if (from === "bot") {
-      const safeSources = safeSourceList(sources);
-      div.innerHTML = formatText(text, safeSources);
-      if (research?.status) div.prepend(badgeFor(research, safeSources.length));
+    if (Array.isArray(data.questions) && data.questions.length) {
+      const ul = el("ul", "questions");
+      data.questions.forEach(q => ul.append(el("li", "", q)));
+      div.append(ul);
+    }
 
-      if (safeSources.length) {
-        const src = document.createElement("div");
-        src.className = "sources";
-        const heading = document.createElement("strong");
-        heading.textContent = "Sources consultées";
-        src.append(heading);
-        safeSources.forEach((s, i) => {
-          const a = document.createElement("a");
-          a.href = s.url;
-          a.target = "_blank";
-          a.rel = "noopener noreferrer";
-          const title = s.title.length > 70 ? s.title.slice(0, 70) + "…" : s.title;
-          a.textContent = `${i + 1}. ${title}${s.pageAge ? ` · ${s.pageAge}` : ""}`;
-          src.append(a);
+    const sources = (Array.isArray(data.sources) ? data.sources : [])
+      .map(s => ({ ...s, safe: safeUrl(s.url) })).filter(s => s.safe);
+    const number = new Map(sources.map((s, i) => [s.id, i + 1]));
+
+    if (Array.isArray(data.facts) && data.facts.length) {
+      div.append(el("strong", "section-title facts", "Faits vérifiés"));
+      const ul = el("ul", "facts");
+      data.facts.forEach(f => {
+        const li = el("li", f.conflict ? "conflict" : "", f.claim);
+        (f.sourceIds || []).forEach(id => {
+          const n = number.get(id);
+          const s = sources[n - 1];
+          if (!s) return;
+          const sup = el("sup", "cite");
+          const a = el("a", "", String(n));
+          a.href = s.safe; a.target = "_blank"; a.rel = "noopener noreferrer"; a.title = `${s.provider} — ${s.title}`;
+          sup.append(a);
+          li.append(" ", sup);
         });
-        div.append(src);
-      }
-    } else {
-      div.textContent = text;
+        ul.append(li);
+      });
+      div.append(ul);
+    }
+
+    if (Array.isArray(data.warnings) && data.warnings.length) {
+      div.append(el("strong", "section-title limits", "Avertissements"));
+      const ul = el("ul", "warnings");
+      data.warnings.forEach(w => ul.append(el("li", "", w)));
+      div.append(ul);
+    }
+
+    if (sources.length) {
+      const box = el("div", "sources");
+      box.append(el("strong", "", "Sources"));
+      sources.forEach((s, i) => {
+        const a = el("a", "", `${i + 1}. ${s.provider} — ${s.title}${s.retrievedAt ? ` · récupéré le ${fmt(s.retrievedAt)}` : ""}`);
+        a.href = s.safe; a.target = "_blank"; a.rel = "noopener noreferrer";
+        box.append(a);
+      });
+      div.append(box);
     }
     messages.appendChild(div);
     messages.scrollTop = messages.scrollHeight;
     return div;
   }
 
-  async function askAI() {
+  /** Ancien format (serveur Python) : converti puis affiché. */
+  function renderLegacy(data) {
+    const research = data.research || {};
+    return renderStructured({
+      status: research.status === "no_research" ? "not_supported" : (research.status || "error"),
+      answer: data.reply || "",
+      verifiedAt: research.verifiedAt,
+      verification: research.status === "verified"
+        ? (research.conflict ? { level: "conflict", label: "Sources en désaccord — valeurs différentes affichées" }
+          : research.singleSource ? { level: "single", label: "Source unique — vérification complémentaire recommandée" }
+            : { level: "multiple", label: "Vérifié par plusieurs sources" })
+        : null,
+      sources: (data.sources || []).map((s, i) => ({ id: `source-${i + 1}`, provider: s.domain || "", title: s.title, url: s.url })),
+      facts: [], warnings: [],
+    });
+  }
+
+  function addMessage(text, from, _sources = [], research = null) {
+    if (from === "bot" && research) return renderStructured({ status: research.status === "unavailable" ? "unverifiable" : research.status, answer: text });
+    const div = el("div", `msg ${from}`, text);
+    messages.appendChild(div);
+    messages.scrollTop = messages.scrollHeight;
+    return div;
+  }
+
+  // ---------------------------------------------------------- échanges
+  async function askServer() {
+    const token = await turnstileToken();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), CHAT_TIMEOUT_MS);
     try {
       const res = await footApiFetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // Le serveur reconstruit lui-même le contexte depuis une source fiable.
-        body: JSON.stringify({ messages: history.slice(-12), league: CURRENT_LEAGUE.apiCode }),
+        body: JSON.stringify({ messages: history.slice(-8), turnstileToken: token }),
         signal: controller.signal,
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const err = new Error(data.error || ([404, 405, 501].includes(res.status) ? "pas de serveur IA sur cet hébergement" : `Erreur ${res.status}`));
+      if (!res.ok && !data.status) {
+        const err = new Error(data.error || ([404, 405, 501].includes(res.status) ? "pas de service de vérification sur cet hébergement" : `Erreur ${res.status}`));
         err.status = res.status;
         throw err;
       }
@@ -197,7 +247,7 @@ const Chatbot = (() => {
     }
   }
 
-  const KEEP_IN_HISTORY = new Set(["verified", "clarification", "no_research"]);
+  const KEEP_IN_HISTORY = new Set(["verified", "clarification", "unverifiable", "not_supported"]);
 
   async function handleQuestion(text) {
     text = String(text).slice(0, MAX_QUESTION_CHARS);
@@ -209,36 +259,38 @@ const Chatbot = (() => {
       return addMessage(unavailableText(), "bot", [], { status: "unavailable" });
     }
 
-    const typing = addMessage("…", "bot typing");
-    typing.textContent = "Je consulte et je compare les sources";
+    const typing = el("div", "msg bot typing", "Je consulte et je compare les sources");
+    messages.appendChild(typing);
+    messages.scrollTop = messages.scrollHeight;
     input.disabled = sendBtn.disabled = true;
     try {
-      const { reply, sources, research } = await askAI();
+      const data = await askServer();
       typing.remove();
-      const status = research?.status || "unavailable";
-      const usable = status !== "verified" || (Array.isArray(sources) && sources.length);
-      if (KEEP_IN_HISTORY.has(status) && usable) {
-        history.push({ role: "assistant", content: reply });
-      } else {
-        history.pop();
+      if (data.reply !== undefined && data.research) {
+        renderLegacy(data);
+        if (KEEP_IN_HISTORY.has(data.research.status)) history.push({ role: "assistant", content: data.reply });
+        else history.pop();
+        return;
       }
-      addMessage(reply, "bot", status === "verified" ? sources || [] : [], research || { status: "unavailable" });
+      if (data.error && !data.answer) data.answer = data.error;
+      renderStructured(data);
+      if (KEEP_IN_HISTORY.has(data.status)) {
+        const questions = Array.isArray(data.questions) ? `\n${data.questions.join("\n")}` : "";
+        history.push({ role: "assistant", content: `${data.answer}${questions}` });
+      } else {
+        history.pop(); // la question pourra être reposée
+      }
     } catch (e) {
       typing.remove();
-      history.pop(); // la question pourra être reposée
-      // Aucun repli sur des données anciennes : une panne reste visible et honnête.
+      history.pop();
       if ([404, 405, 501].includes(e.status)) {
         aiAvailable = false;
-        setStatus("Recherche vérifiée indisponible", true);
+        setStatus("Service de vérification indisponible", true);
         addMessage(unavailableText(), "bot", [], { status: "unavailable" });
-      } else if (!e.status) {
-        healthChecked = false;
-        const reason = e.name === "AbortError"
-          ? "la recherche a pris trop de temps"
-          : "le serveur est injoignable (il redémarre peut-être après une période d'inactivité)";
-        addMessage(`La vérification a échoué : ${reason}. Réessaie dans une trentaine de secondes.`, "bot", [], { status: "unavailable" });
       } else {
-        addMessage(`La vérification a échoué : ${e.message}`, "bot", [], { status: "unavailable" });
+        healthChecked = false;
+        const reason = e.name === "AbortError" ? "la vérification a pris trop de temps" : e.message;
+        addMessage(`La vérification a échoué : ${reason}. Réessaie dans un instant.`, "bot", [], { status: "error" });
       }
     } finally {
       input.disabled = sendBtn.disabled = false;
@@ -246,14 +298,13 @@ const Chatbot = (() => {
     }
   }
 
-  // Suggestions de questions (cliquables)
   const SUGGESTIONS = [
-    "Classement de la Ligue 1",
-    "Meilleurs buteurs de Premier League",
-    "Quelle place pour l'OM ?",
+    "Quel est le classement actuel de la Ligue 1 ?",
+    "Meilleur buteur de Premier League",
     "Prochain match du PSG",
     "Dernier résultat du Bayern",
     "Combien de buts a João Pedro ?",
+    "C'est quoi le hors-jeu ?",
   ];
   const sugBox = document.getElementById("chat-suggestions");
   SUGGESTIONS.forEach(text => {
@@ -274,7 +325,7 @@ const Chatbot = (() => {
     handleQuestion(text);
   });
 
-  if (!aiAvailable) setStatus("Recherche vérifiée non connectée", true);
+  if (!aiAvailable) setStatus("Service de vérification non connecté", true);
 
   return { toggle, addMessage, ask: handleQuestion };
 })();
