@@ -264,6 +264,20 @@ class RefusalTests(FreeChatTestCase):
         self.assertEqual(result["research"]["status"], "unavailable")
         self.assertIn("aucune liste de buteurs vérifiable", result["reply"])
 
+    def test_scorers_outside_free_plan_are_refused_clearly(self):
+        denied = free_sources.SourceUnavailable("football-data.org", "accès refusé (clé absente, invalide ou donnée hors offre gratuite)")
+        with patch.dict(self.net.overrides, {"/scorers": denied}):
+            result = self.ask("Meilleurs buteurs de Premier League")
+            self.assertEqual(result["research"]["status"], "unavailable")
+            self.assertIn("ne sont pas accessibles avec la clé gratuite", result["reply"])
+            goals = self.ask("Combien de buts João Pedro de Chelsea cette saison en Premier League ?")
+            self.assertEqual(goals["research"]["status"], "unavailable")
+            self.assertNotRegex(goals["reply"], r"\d+ buts")
+            # Bundesliga : repli sur OpenLigaDB, gratuit et sans clé.
+            bl1 = self.ask("Meilleurs buteurs de Bundesliga")
+        self.assertEqual(bl1["research"]["status"], "verified")
+        self.assertIn("N. Füllkrug — 9 buts", bl1["reply"])
+
     def test_prediction_is_not_made(self):
         result = self.ask("Qui va gagner PSG contre OM ?")
         self.assertEqual(result["research"]["status"], "no_research")
