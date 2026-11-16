@@ -1,0 +1,8 @@
+# Copier en .dev.vars pour le développement local (wrangler dev).
+# Ne jamais committer .dev.vars : il contient de vraies clés.
+FOOTBALL_DATA_KEY=
+API_FOOTBALL_KEY=
+TURNSTILE_SECRET_KEY=
+# Développement local uniquement :
+# TURNSTILE_DISABLED=true
+# ALLOW_MEMORY_STORE=true
