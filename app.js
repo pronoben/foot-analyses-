@@ -348,7 +348,7 @@ function renderAll() {
 async function switchLeague(id, { keepView = false } = {}) {
   if (!LEAGUES[id]) return;
   setLeague(id);
-  localStorage.setItem("footanalyse-league", id);
+  try { localStorage.setItem("footanalyse-league", id); } catch { /* navigation privée */ }
   renderAll(); // affichage immédiat avec les données enregistrées
   if (!keepView) showView("dashboard");
   if (await loadLiveData(LEAGUES[id])) { setLeague(id); renderAll(); }
@@ -372,13 +372,21 @@ async function loadLiveData(league) {
         (b.aliases || []).some(a => simple(t.name) === simple(a))) || {};
       return { ...t, color: base.color, aliases: [...(base.aliases || []), simple(base.name || "")].filter(Boolean) };
     });
-    league.standings = data.standings;
-    league.upcoming = data.upcoming;
+    // Défense en profondeur : les statistiques reçues du serveur sont forcées
+    // en nombres avant d'être insérées dans la page.
+    const num = v => (Number.isFinite(Number(v)) ? Number(v) : 0);
+    league.standings = data.standings.map(s => ({
+      ...s, P: num(s.P), W: num(s.W), D: num(s.D), L: num(s.L), GF: num(s.GF), GA: num(s.GA), pts: num(s.pts),
+    }));
+    league.upcoming = data.upcoming.map(m => ({ ...m, day: num(m.day) }));
     league.info = { ...data.info, live: true };
     if (data.players && data.players.length) {
+      const numOrNull = v => (v == null || !Number.isFinite(Number(v)) ? null : Number(v));
       league.players = data.players.map(p => ({
         ...p,
-        total: p.goals != null && p.assists != null ? p.goals + p.assists : null,
+        goals: numOrNull(p.goals), assists: numOrNull(p.assists),
+        penalties: numOrNull(p.penalties), matches: numOrNull(p.matches),
+        total: numOrNull(p.goals) != null && numOrNull(p.assists) != null ? numOrNull(p.goals) + numOrNull(p.assists) : null,
         minutes: null,
       }));
       league.playersInfo = { live: true, label: `en direct (football-data.org, ${data.info.fetchedAt})`, sources: ["https://www.football-data.org/"] };
@@ -395,4 +403,7 @@ async function loadLiveData(league) {
 }
 
 // ---------- Démarrage ----------
-switchLeague(LEAGUES[localStorage.getItem("footanalyse-league")] ? localStorage.getItem("footanalyse-league") : "L1");
+const savedLeague = (() => {
+  try { return localStorage.getItem("footanalyse-league"); } catch { return null; }
+})();
+switchLeague(Object.hasOwn(LEAGUES, savedLeague || "") ? savedLeague : "L1");
