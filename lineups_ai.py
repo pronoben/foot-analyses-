@@ -18,6 +18,7 @@ import anthropic
 from chatbot_ai import MODEL
 
 CACHE_SECONDS = 6 * 3600
+CACHE_MAX_ENTRIES = 300  # borne la mémoire même si on demande des milliers de matchs
 _cache = {}
 
 PLAYER = {
@@ -185,6 +186,8 @@ def get_lineups(match_id, home, away, match_date, league="Ligue 1"):
                 if _safe_source(s.get("url", ""), seen_urls)
             ]
             data["generee_le"] = time.strftime("%d/%m/%Y %H:%M")
+            if len(_cache) >= CACHE_MAX_ENTRIES:
+                _cache.pop(min(_cache, key=lambda k: _cache[k]["time"]), None)
             _cache[match_id] = {"time": time.time(), "data": data}
             return data
 

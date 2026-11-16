@@ -24,6 +24,7 @@ Le chatbot a besoin du SDK Anthropic : pip install -r requirements.txt
 
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -417,6 +418,34 @@ def get_news_data():
     return data
 
 
+LEAGUE_NAMES = {"Ligue 1", "Premier League", "Liga", "Serie A", "Bundesliga"}
+_MATCH_ID = re.compile(r"^[A-Za-z0-9_-]{1,60}$")
+_TEAM_NAME = re.compile(r"^\w[\w .'’&()/-]{0,59}$")
+_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def validate_lineup_request(body):
+    """Valide strictement une demande de compositions (texte envoyé à l'IA)."""
+    match_id = str(body.get("id", "")).strip()
+    home = str(body.get("home", "")).strip()
+    away = str(body.get("away", "")).strip()
+    match_date = str(body.get("date", "")).strip()
+    league = str(body.get("league") or "Ligue 1").strip()
+    if not _MATCH_ID.fullmatch(match_id):
+        raise ValueError("Identifiant de match invalide.")
+    if not (_TEAM_NAME.fullmatch(home) and _TEAM_NAME.fullmatch(away)) or home == away:
+        raise ValueError("Noms d'équipes invalides.")
+    if not _DATE.fullmatch(match_date):
+        raise ValueError("Date invalide (format AAAA-MM-JJ).")
+    try:
+        datetime.strptime(match_date, "%Y-%m-%d")
+    except ValueError:
+        raise ValueError("Date invalide (format AAAA-MM-JJ).")
+    if league not in LEAGUE_NAMES:
+        raise ValueError("Championnat inconnu.")
+    return [match_id, home, away, match_date, league]
+
+
 def is_public_path(path):
     """Autorise uniquement les ressources nécessaires au frontend."""
     clean = unquote(path).split("?", 1)[0].lstrip("/") or "index.html"
@@ -431,6 +460,15 @@ def is_public_path(path):
 
 
 class Handler(SimpleHTTPRequestHandler):
+    # Ne pas révéler la version de Python ni du serveur.
+    server_version = "FootAnalyse"
+    sys_version = ""
+
+    def version_string(self):
+        return self.server_version
+    # Coupe les connexions lentes ou inactives (attaque « slowloris »).
+    timeout = 20
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
 
@@ -452,8 +490,14 @@ class Handler(SimpleHTTPRequestHandler):
             "Content-Security-Policy",
             "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
             "img-src 'self' https: data:; connect-src 'self' https:; "
-            "font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+            "font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; "
+            "frame-ancestors 'none'",
         )
+        self.send_header("Cross-Origin-Opener-Policy", "same-origin")
+        # HTTPS obligatoire pour les navigateurs, seulement quand le proxy de
+        # l'hébergeur confirme que la requête est arrivée en HTTPS.
+        if TRUST_PROXY and self.headers.get("X-Forwarded-Proto", "") == "https":
+            self.send_header("Strict-Transport-Security", "max-age=31536000")
         origin = self.headers.get("Origin", "").rstrip("/")
         if origin and origin in ALLOWED_ORIGINS:
             self.send_header("Access-Control-Allow-Origin", origin)
@@ -560,6 +604,15 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_error(404)
         return super().do_GET()
 
+    def do_HEAD(self):
+        # Même liste blanche que GET : sinon HEAD révélerait l'existence et la
+        # taille de fichiers internes (server.py, .git/config…).
+        if self.path.split("?")[0].startswith("/api/"):
+            return self.send_error(405)
+        if not is_public_path(self.path):
+            return self.send_error(404)
+        return super().do_HEAD()
+
     MAX_BODY_BYTES = 32_000
 
     def read_json_body(self):
@@ -640,10 +693,8 @@ class Handler(SimpleHTTPRequestHandler):
                     return self.send_json(200, {**cached, "cached": True})
                 result = self.run_paid_ai(route, lambda: chatbot_ai.answer(messages, trusted_context))
             else:
-                fields = [str(body.get(k, ""))[:80] for k in ("id", "home", "away", "date")]
-                if not all(fields):
-                    raise ValueError("Champs id, home, away et date obligatoires.")
-                league = str(body.get("league") or "Ligue 1")[:40]
+                fields = validate_lineup_request(body)
+                league = fields.pop()
                 result = self.run_paid_ai(route, lambda: lineups_ai.get_lineups(*fields, league=league))
             if result is None:
                 return  # refus déjà envoyé (plafond ou serveur occupé)
