@@ -388,3 +388,19 @@ button.secondary { background: var(--card-2); color: var(--text); border: 1px so
 }
 
 body[data-view="coach"] .league-bar, body[data-view="session"] .league-bar { display: none; }
+
+/* Chatbot vérifié (Worker Cloudflare) */
+.verification-level { font-size: .72rem; font-weight: 700; margin: -4px 0 8px; padding: 3px 8px; border-radius: 6px; display: inline-block; }
+.verification-level.level-multiple { color: #062; background: var(--accent); }
+.verification-level.level-single { color: #1f1300; background: var(--warn); }
+.verification-level.level-conflict { color: #fff; background: #dc2626; }
+.verification-badge.unverifiable, .verification-badge.quota, .verification-badge.error { color: var(--warn); }
+.verification-badge.refused { color: #f87171; }
+.verification-badge.not_supported { color: var(--muted); }
+.msg .answer { margin: 0 0 6px; }
+.msg ul.facts, .msg ul.warnings, .msg ul.questions { margin: 4px 0 6px; padding-left: 18px; }
+.msg ul.facts li, .msg ul.warnings li, .msg ul.questions li { margin: 3px 0; }
+.msg ul.facts li.conflict { color: #fca5a5; }
+.msg ul.warnings li { color: var(--warn); font-size: .8rem; }
+.chat-turnstile:empty { display: none; }
+.chat-turnstile { display: flex; justify-content: center; padding: 4px 0; }

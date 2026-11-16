@@ -1,8 +1,10 @@
 /* Configuration publique du frontend.
-   Sur GitHub Pages, remplace apiBase par l'URL HTTPS du backend déployé.
-   Ne place jamais de clé API dans ce fichier. */
+   apiBase : adresse HTTPS du Worker Cloudflare du chatbot.
+   turnstileSiteKey : clé PUBLIQUE du widget Turnstile (la clé secrète reste
+   uniquement dans Cloudflare). Ne place jamais de clé secrète dans ce fichier. */
 window.FOOTANALYSE_CONFIG = Object.freeze({
   apiBase: "",
+  turnstileSiteKey: "",
 });
 
 window.footApiUrl = path => {

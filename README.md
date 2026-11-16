@@ -91,7 +91,16 @@ window.FOOTANALYSE_CONFIG = Object.freeze({
 Sans backend déployé, les rubriques historiques et le coaching local continuent de
 fonctionner, tandis que Direct et Actualités affichent une explication claire.
 
-### Chatbot gratuit (par défaut)
+### Chatbot en ligne : Worker Cloudflare (version 1 gratuite)
+
+Le chatbot du site public passe par le Worker Cloudflare du dossier [`worker/`](worker/README.md) :
+sources gratuites (API-Football, football-data.org, TheSportsDB, OpenLigaDB,
+Wikipédia, IFAB), cache partagé, Turnstile, 10 questions par heure et par visiteur,
+Workers AI uniquement pour reformuler des faits déjà vérifiés. Chaque réponse
+contient `status`, `answer`, `verifiedAt`, `facts` (reliés à `sourceIds`), `sources`
+et `warnings`. Déploiement et limites : voir `worker/README.md`.
+
+### Chatbot gratuit Python (développement local)
 
 Le chatbot ne répond jamais de mémoire : il interroge des fournisseurs de données,
 compare leurs résultats et cite chaque source avec sa date.

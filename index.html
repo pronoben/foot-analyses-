@@ -4,9 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <!-- Sécurité : GitHub Pages ne permet pas d'ajouter des en-têtes HTTP, la
-       politique de contenu est donc déclarée ici. Seuls les scripts du site
-       peuvent s'exécuter ; les appels réseau vont au site et au backend Render. -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://*.onrender.com; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests" />
+       politique de contenu est donc déclarée ici. Seuls les scripts du site et
+       Cloudflare Turnstile (anti-robot) peuvent s'exécuter ; les appels réseau
+       vont au site et au Worker Cloudflare du chatbot. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://*.workers.dev https://*.onrender.com; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests" />
   <meta name="referrer" content="strict-origin-when-cross-origin" />
   <title>FootAnalyse – Analyse des 5 grands championnats</title>
   <link rel="stylesheet" href="style.css" />
@@ -166,6 +167,7 @@
       <div class="msg bot">Pose-moi une question simple sur les 5 grands championnats (saison en cours) : classement, meilleurs buteurs, buts d'un joueur, dernier ou prochain match. Chaque réponse est datée et cite ses sources. Si je ne peux pas vérifier, je te le dis au lieu d'inventer.</div>
     </div>
     <div id="chat-suggestions" class="chat-suggestions"></div>
+    <div id="chat-turnstile" class="chat-turnstile" aria-live="polite"></div>
     <form id="chat-form" class="chat-form">
       <input id="chat-input" type="text" placeholder="Pose ta question…" autocomplete="off" />
       <button type="submit">Envoyer</button>
@@ -174,6 +176,7 @@
 
   <footer>Projet de groupe – FootAnalyse © 2026 · Données : football-data.org (en direct) ou données enregistrées (Wikipédia, Foot Mercato, ligue1.com, Starting11)</footer>
 
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
   <script src="config.js"></script>
   <script src="data.js"></script>
   <script src="lineups-data.js"></script>
