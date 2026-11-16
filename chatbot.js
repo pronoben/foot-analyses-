@@ -3,8 +3,8 @@
    ---------------------------------------------------------
    Envoie la conversation au serveur (/api/chat), qui interroge
    Claude avec recherche web (voir chatbot_ai.py).
-   Si le serveur IA n'est pas disponible (pas de clé, pas
-   d'internet…), on bascule sur des réponses simples par mots-clés.
+   Si le serveur de recherche n'est pas disponible, le chatbot
+   refuse de répondre plutôt que d'utiliser des données anciennes.
    ========================================================= */
 
 const Chatbot = (() => {
@@ -13,8 +13,16 @@ const Chatbot = (() => {
   const form = document.getElementById("chat-form");
   const input = document.getElementById("chat-input");
   const sendBtn = form.querySelector("button");
+  const serviceStatus = document.getElementById("chat-service-status");
   const history = []; // { role: "user" | "assistant", content }
-  let aiAvailable = true;
+  const configuredBackend = Boolean(window.FOOTANALYSE_CONFIG?.apiBase);
+  const staticGitHubPage = location.hostname.endsWith("github.io");
+  let aiAvailable = configuredBackend || !staticGitHubPage;
+
+  const unavailableText = () =>
+    "La recherche web vérifiée n'est pas connectée à cette version du site. " +
+    "Je préfère ne pas répondre plutôt que d'utiliser les données enregistrées ou d'inventer. " +
+    "Le serveur IA sécurisé doit être déployé et relié au site.";
 
   function toggle(open) {
     const isOpen = open ?? !panel.classList.contains("open");
@@ -36,7 +44,7 @@ const Chatbot = (() => {
       .replace(/\n/g, "<br>");
   }
 
-  function addMessage(text, from, sources = []) {
+  function addMessage(text, from, sources = [], research = null) {
     const div = document.createElement("div");
     div.className = `msg ${from}`;
     if (from === "bot") {
@@ -45,20 +53,37 @@ const Chatbot = (() => {
         try {
           const url = new URL(String(source.url || ""));
           if (!["http:", "https:"].includes(url.protocol)) return null;
-          return { url: url.href, title: String(source.title || url.hostname) };
+          return { url: url.href, title: String(source.title || url.hostname), domain: url.hostname };
         } catch { return null; }
       }).filter(Boolean);
+
+      if (research?.status) {
+        const badge = document.createElement("div");
+        badge.className = `verification-badge ${research.status}`;
+        if (research.status === "verified") {
+          const when = research.verifiedAt
+            ? new Date(research.verifiedAt).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })
+            : "à l'instant";
+          badge.textContent = `✓ Recherche web vérifiée · ${safeSources.length} source${safeSources.length > 1 ? "s" : ""} · ${when}`;
+        } else {
+          badge.textContent = "Non vérifié — aucune réponse factuelle fournie";
+        }
+        div.prepend(badge);
+      }
+
       if (safeSources.length) {
         const src = document.createElement("div");
         src.className = "sources";
-        src.textContent = "Sources : ";
+        const heading = document.createElement("strong");
+        heading.textContent = "Sources consultées";
+        src.append(heading);
         safeSources.forEach((s, i) => {
           const a = document.createElement("a");
           a.href = s.url;
           a.target = "_blank";
           a.rel = "noopener noreferrer";
-          a.textContent = s.title.length > 40 ? s.title.slice(0, 40) + "…" : s.title;
-          if (i) src.append(" · ");
+          const title = s.title.length > 70 ? s.title.slice(0, 70) + "…" : s.title;
+          a.textContent = `${i + 1}. ${title} — ${s.domain}`;
           src.append(a);
         });
         div.append(src);
@@ -87,41 +112,39 @@ const Chatbot = (() => {
     return data;
   }
 
-  // Réponses sans IA : moteur d'analyse local (js/chat-local.js)
-  const localReply = question => LocalBot.reply(question);
-  let noticeShown = false;
-
   async function handleQuestion(text) {
     addMessage(text, "user");
     history.push({ role: "user", content: text });
 
     if (!aiAvailable) {
-      const reply = localReply(text);
-      history.push({ role: "assistant", content: reply });
-      return addMessage(reply, "bot");
+      history.pop();
+      return addMessage(unavailableText(), "bot", [], { status: "unavailable" });
     }
 
     const typing = addMessage("…", "bot typing");
     typing.textContent = "Je réfléchis";
     input.disabled = sendBtn.disabled = true;
     try {
-      const { reply, sources } = await askAI();
+      const { reply, sources, research } = await askAI();
       typing.remove();
-      history.push({ role: "assistant", content: reply });
-      addMessage(reply, "bot", sources || []);
+      if (research?.status === "verified" && Array.isArray(sources) && sources.length) {
+        history.push({ role: "assistant", content: reply });
+      } else {
+        history.pop();
+      }
+      addMessage(reply, "bot", sources || [], research || { status: "unavailable" });
     } catch (e) {
       typing.remove();
-      // 503 = pas de clé / SDK non installé / site ouvert sans server.py : mode simple
+      // Aucun repli sur des données anciennes : une panne reste visible et honnête.
       if ([404, 405, 501, 503].includes(e.status) || !e.status) {
         aiAvailable = false;
-        const reply = localReply(text);
-        history.push({ role: "assistant", content: reply });
-        const notice = noticeShown ? "" : `*Mode analyse locale (IA indisponible : ${e.message}) — je réponds avec les données et le modèle du site.*\n\n`;
-        noticeShown = true;
-        addMessage(notice + reply, "bot");
+        history.pop();
+        serviceStatus.textContent = "Recherche vérifiée indisponible";
+        serviceStatus.classList.add("offline");
+        addMessage(unavailableText(), "bot", [], { status: "unavailable" });
       } else {
         history.pop(); // la question pourra être reposée
-        addMessage(`⚠️ ${e.message}`, "bot");
+        addMessage(`La vérification a échoué : ${e.message}`, "bot", [], { status: "unavailable" });
       }
     } finally {
       input.disabled = sendBtn.disabled = false;
@@ -131,20 +154,12 @@ const Chatbot = (() => {
 
   // Suggestions de questions (cliquables)
   const SUGGESTIONS = [
-    "Analyse Lille – Lyon",
-    "Qui va gagner Nice – PSG ?",
-    "Compo probable de l'OM",
-    "Quel est le match le plus serré de la journée ?",
-    "Plus de 2,5 buts entre Lens et Toulouse ?",
-    "Comment marche le pronostic ?",
-    "Stats de Sinayoko",
-    "Meilleurs passeurs",
-    "Compare Gouiri et Wahi",
-    "Qui va gagner Liverpool – Man United ?",
-    "Stats de Haaland",
-    "Compo probable du Real Madrid",
-    "Classement de la Serie A",
-    "Meilleurs buteurs de Bundesliga",
+    "Analyse les matchs de Ligue 1 du week-end avec les absents confirmés",
+    "Quel est le classement actuel de Premier League ?",
+    "Compare la forme récente du PSG et de Marseille",
+    "Quelles compositions sont officiellement confirmées aujourd'hui ?",
+    "Quels transferts ont été officialisés cette semaine ?",
+    "Explique le modèle de pronostic et ses limites",
   ];
   const sugBox = document.getElementById("chat-suggestions");
   SUGGESTIONS.forEach(text => {
@@ -164,6 +179,11 @@ const Chatbot = (() => {
     input.value = "";
     handleQuestion(text);
   });
+
+  if (!aiAvailable) {
+    serviceStatus.textContent = "Recherche vérifiée non connectée";
+    serviceStatus.classList.add("offline");
+  }
 
   return { toggle, addMessage, ask: handleQuestion };
 })();

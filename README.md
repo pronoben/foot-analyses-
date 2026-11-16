@@ -15,7 +15,8 @@ coaching personnalisé.
 - **Pronostics** : modèle de Poisson, buts attendus et scores les plus probables.
 - **Coach** : catalogue de séances inspirées des qualités de joueurs professionnels,
   filtres par niveau et qualité, fiches détaillées et programme local personnalisé.
-- **Assistant** : analyse locale sans clé ; fonctions Claude facultatives via le backend.
+- **Assistant vérifié** : recherche web côté serveur, sources citées, date de
+  vérification et refus de répondre lorsqu'aucune source fiable n'est disponible.
 - **MCP en lecture seule** : accès aux données football pour un assistant compatible.
 
 Les pronostics sont des estimations statistiques, pas des certitudes ni des conseils
@@ -50,6 +51,11 @@ le site conserve ses données enregistrées et son moteur local si elles sont ab
 Le forfait gratuit de football-data.org peut fournir des scores différés. Un vrai
 direct commercial demande un fournisseur et un abonnement adaptés. L'interface
 indique donc clairement que le délai dépend de la source.
+
+Le chatbot public ne revient jamais silencieusement sur les anciennes données du
+site. Si le backend IA n'est pas déployé ou si la recherche ne fournit aucune
+citation HTTPS, il indique que la vérification est indisponible au lieu de produire
+une réponse potentiellement fausse.
 
 ### Sécurité avant une mise en ligne publique
 

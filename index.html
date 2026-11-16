@@ -151,11 +151,14 @@
   <button id="chat-toggle" class="chat-toggle" aria-label="Ouvrir le chatbot">💬</button>
   <aside id="chat-panel" class="chat-panel" aria-hidden="true">
     <div class="chat-header">
-      <strong>Assistant FootAnalyse</strong>
+      <div>
+        <strong>Assistant FootAnalyse</strong>
+        <span id="chat-service-status" class="chat-service-status">Recherche web vérifiée</span>
+      </div>
       <button id="chat-close" aria-label="Fermer">✕</button>
     </div>
     <div id="chat-messages" class="chat-messages">
-      <div class="msg bot">Salut ! ⚽ Je suis l'assistant foot de FootAnalyse.<br>Pose-moi n'importe quelle question sur la Ligue 1, la Premier League, la Liga, la Serie A ou la Bundesliga : pronostics, compos probables, absents, stats des joueurs (buts, passes…), comparaisons… ou sur le football en général.</div>
+      <div class="msg bot">Pose-moi une question football. Pour chaque réponse factuelle, je dois rechercher le web, afficher les sources consultées et séparer les faits vérifiés de mon analyse. Si la vérification n'est pas disponible, je te le dirai au lieu d'inventer.</div>
     </div>
     <div id="chat-suggestions" class="chat-suggestions"></div>
     <form id="chat-form" class="chat-form">
